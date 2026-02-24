@@ -110,17 +110,10 @@ export async function POST(request: Request) {
       }
     }
 
-    // 検索条件に応じたOverpass QLの命令文を動的に構築
-    const query = `
-      [out:json][timeout:20];
-      (
-        node["leisure"="${placeType}"](around:${radius}, ${lat}, ${lng});
-        node["amenity"="${placeType}"](around:${radius}, ${lat}, ${lng});
-      );
-      out body;
-      >;
-      out skel qt;
-    `;
+    // 探索半径の自動拡大設定
+    // デフォルト初期半径: 1000m、最大半径: 5000m、増加幅: 1000m
+    const maxRadius = Number(body.maxRadius) || 5000;
+    const radiusStep = Number(body.radiusStep) || 1000;
 
     // 複数のOverpass APIサーバーを用意し、接続に失敗した場合は次のサーバーを試す
     const overpassServers = [
@@ -129,77 +122,160 @@ export async function POST(request: Request) {
       "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     ];
 
-    let response: Response | null = null;
-    let lastError: Error | null = null;
+    // Overpass APIへのリクエストを実行する内部関数
+    async function fetchOverpass(searchRadius: number): Promise<OSMResponse> {
+      const query = `
+        [out:json][timeout:20];
+        (
+          node["leisure"="${placeType}"](around:${searchRadius}, ${lat}, ${lng});
+          node["amenity"="${placeType}"](around:${searchRadius}, ${lat}, ${lng});
+        );
+        out body;
+        >;
+        out skel qt;
+      `;
 
-    for (const serverUrl of overpassServers) {
-      try {
-        // 無限待機を防ぐため、15秒で通信を強制切断する
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+      let response: Response | null = null;
+      let lastError: Error | null = null;
 
-        console.log(`Overpass APIサーバーに接続中: ${serverUrl}`);
-        response = await fetch(serverUrl, {
-          method: "POST",
-          body: "data=" + encodeURIComponent(query),
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "CityExplorationHackathonApp/1.0",
-          },
-          signal: controller.signal,
-          cache: "no-store",
+      for (const serverUrl of overpassServers) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+          console.log(
+            `Overpass APIサーバーに接続中 (半径${searchRadius}m): ${serverUrl}`,
+          );
+          response = await fetch(serverUrl, {
+            method: "POST",
+            body: "data=" + encodeURIComponent(query),
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "User-Agent": "CityExplorationHackathonApp/1.0",
+            },
+            signal: controller.signal,
+            cache: "no-store",
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            console.log(`接続成功: ${serverUrl}`);
+            break;
+          }
+        } catch (err: any) {
+          console.log(`サーバー ${serverUrl} への接続失敗: ${err.message}`);
+          lastError = err;
+          response = null;
+          continue;
+        }
+      }
+
+      if (!response) {
+        throw (
+          lastError ||
+          new Error("全てのOverpass APIサーバーへの接続に失敗しました")
+        );
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `外部システムからの応答異常: 状態コード ${response.status}, 内容: ${errorText}`,
+        );
+      }
+
+      return await response.json();
+    }
+
+    // 半径を段階的に拡大しながら店舗を探索する
+    let formattedPlaces: {
+      name: string;
+      lat: number;
+      lng: number;
+      bearing: number;
+    }[] = [];
+    let actualRadius = radius;
+
+    for (
+      let currentRadius = radius;
+      currentRadius <= maxRadius;
+      currentRadius += radiusStep
+    ) {
+      actualRadius = currentRadius;
+      console.log(`探索半径: ${currentRadius}m で検索中...`);
+
+      const data = await fetchOverpass(currentRadius);
+
+      // 画面側で扱いやすいようにデータを整形
+      formattedPlaces = data.elements
+        .filter((element) => element.tags && element.tags.name)
+        .map((element) => {
+          const placeLat = element.lat;
+          const placeLng = element.lon;
+          const bearing = calculateBearing(lat, lng, placeLat, placeLng);
+          return {
+            name: element.tags?.name || "名称不明",
+            lat: placeLat,
+            lng: placeLng,
+            bearing: Math.round(bearing * 10) / 10,
+          };
         });
 
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          console.log(`接続成功: ${serverUrl}`);
-          break; // 成功したらループを抜ける
-        }
-      } catch (err: any) {
-        console.log(`サーバー ${serverUrl} への接続失敗: ${err.message}`);
-        lastError = err;
-        response = null;
-        continue; // 次のサーバーを試す
+      // 方角が指定されている場合、扇形の範囲でフィルタリングする
+      if (targetDirection !== null) {
+        formattedPlaces = formattedPlaces.filter((place) =>
+          isWithinDirectionRange(
+            place.bearing,
+            targetDirection!,
+            directionRange,
+          ),
+        );
       }
-    }
 
-    if (!response) {
-      throw (
-        lastError ||
-        new Error("全てのOverpass APIサーバーへの接続に失敗しました")
-      );
-    }
+      // 1件以上見つかったら探索を終了
+      if (formattedPlaces.length > 0) {
+        console.log(
+          `半径${currentRadius}mで${formattedPlaces.length}件見つかりました。探索終了。`,
+        );
+        break;
+      }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `外部システムからの応答異常: 状態コード ${response.status}, 内容: ${errorText}`,
-      );
-    }
+      // 最大半径に達してもまだ見つからない場合
+      if (currentRadius + radiusStep > maxRadius && currentRadius < maxRadius) {
+        // maxRadiusちょうどでもう一度試す
+        actualRadius = maxRadius;
+        console.log(`探索半径: ${maxRadius}m（最大）で最終検索中...`);
 
-    // 取得したデータを事前に定義した型に当てはめる
-    const data: OSMResponse = await response.json();
+        const lastData = await fetchOverpass(maxRadius);
+        formattedPlaces = lastData.elements
+          .filter((element) => element.tags && element.tags.name)
+          .map((element) => {
+            const placeLat = element.lat;
+            const placeLng = element.lon;
+            const bearing = calculateBearing(lat, lng, placeLat, placeLng);
+            return {
+              name: element.tags?.name || "名称不明",
+              lat: placeLat,
+              lng: placeLng,
+              bearing: Math.round(bearing * 10) / 10,
+            };
+          });
 
-    // 画面側で扱いやすいようにデータを整形
-    let formattedPlaces = data.elements
-      .filter((element) => element.tags && element.tags.name) // 名前が登録されている場所のみを抽出
-      .map((element) => {
-        const placeLat = element.lat;
-        const placeLng = element.lon;
-        const bearing = calculateBearing(lat, lng, placeLat, placeLng);
-        return {
-          name: element.tags?.name || "名称不明",
-          lat: placeLat,
-          lng: placeLng,
-          bearing: Math.round(bearing * 10) / 10, // 方位角（小数点1桁）
-        };
-      });
+        if (targetDirection !== null) {
+          formattedPlaces = formattedPlaces.filter((place) =>
+            isWithinDirectionRange(
+              place.bearing,
+              targetDirection!,
+              directionRange,
+            ),
+          );
+        }
+        break;
+      }
 
-    // 方角が指定されている場合、扇形の範囲でフィルタリングする
-    if (targetDirection !== null) {
-      formattedPlaces = formattedPlaces.filter((place) =>
-        isWithinDirectionRange(place.bearing, targetDirection!, directionRange),
+      console.log(
+        `半径${currentRadius}mでは見つかりませんでした。半径を拡大します...`,
       );
     }
 
@@ -208,6 +284,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       status: "success",
+      searchedRadius: actualRadius,
       direction:
         targetDirection !== null
           ? { angle: targetDirection, range: directionRange }
