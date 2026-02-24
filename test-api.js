@@ -4,12 +4,11 @@ fetch("http://localhost:3000/api/explore", {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    // 幸手駅
     currentLat: 36.075,
     currentLng: 139.725,
-    radius: 3000,
+    radius: 1000,
     placeType: "restaurant",
-    direction: "east", // 東方向の店舗に絞り込む
+    direction: "west", // 南方向の店舗に絞り込む
     directionRange: 45, // 左右45度ずつ（合計90度の扇形）
   }),
 })
