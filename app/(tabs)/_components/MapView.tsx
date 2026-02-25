@@ -38,6 +38,7 @@ export default function MapView() {
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const lastFetchLocation = useRef<{ lat: number; lng: number } | null>(null);
+  const [isPeeking, setIsPeeking] = useState(false);
 
   // 中央ボタンクリックで検索オーバーレイを表示
   const handleCenterButtonClick = () => {
@@ -176,10 +177,24 @@ export default function MapView() {
           },
         },
         layers: [
+          // 通常表示は背景レイヤーのみで、お店のピンのみ表示
           {
-            id: "osm",
+            id: "background",
+            type: "background",
+            paint: {
+              "background-color": "#f0fdf4",
+            },
+          },
+
+          // 救済で地図を表示する
+          {
+            id: "osm-layer",
             type: "raster",
             source: "osm",
+            paint: {
+              "raster-opacity": 0, // 初期値は0（見えない）
+              "raster-saturation": -0.5, // 彩度を下げる
+            },
           },
         ],
       },
@@ -300,6 +315,18 @@ export default function MapView() {
     };
   }, [places]);
 
+  // マップの表示切替
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer("osm-layer")) return;
+
+    // isPeeking=trueなら地図を出す、falseなら背景だけ表示して地図はフェードアウト
+    map.setPaintProperty("osm-layer", "raster-opacity-transition", {
+      duration: 300,
+    });
+    map.setPaintProperty("osm-layer", "raster-opacity", isPeeking ? 1 : 0);
+  }, [isPeeking]);
+
   // 現在地取得中
   if (!userLocation && !error) {
     return (
@@ -344,6 +371,16 @@ export default function MapView() {
         className="absolute inset-0"
         style={{ width: "100%", height: "100%" }}
       />
+      <div
+        className="absolute inset-0 pointer-events-none opacity-20"
+        style={{
+          backgroundImage: `linear-gradient(to right, #4ade80 1px, transparent 1px),
+                         linear-gradient(to bottom, #4ade80 1px, transparent 1px)`,
+          backgroundSize: "40px 40px",
+          maskImage:
+            "radial-gradient(circle at center 60%, black 0%, transparent 80%)",
+        }}
+      ></div>
 
       {/* ===== 上部オーバーレイ ===== */}
       {/* コンテナ自体はタッチイベントを阻害しないようにpointer-events-noneにする */}
@@ -390,7 +427,16 @@ export default function MapView() {
         {/* absoluteで右上に固定し直すことで、中央のカードと干渉させない */}
         <div className="absolute top-12 right-4 flex flex-col gap-3 pointer-events-auto">
           {/* 地図表示切替 */}
-          <button className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-md backdrop-blur-sm active:bg-gray-100">
+          <button
+            className={`flex h-10 w-10 items-center justify-center rounded-full shadow-md backdrop-blur-sm transition-all duration-200 ${
+              isPeeking
+                ? "bg-green-500 scale-110 ring-4 ring-green-200"
+                : "bg-white/90 active:bg-gray-100"
+            }`}
+            onPointerDown={() => setIsPeeking(true)}
+            onPointerUp={() => setIsPeeking(false)}
+            onPointerLeave={() => setIsPeeking(false)}
+          >
             <Image
               src="/images/change_map.svg"
               width={20}
