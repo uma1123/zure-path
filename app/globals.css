@@ -26,10 +26,11 @@ body {
 }
 
 /* スマホブラウザでのフルスクリーン対応 */
-html,
+html {
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
 body {
-  height: 100%;
-  overflow: hidden;
   overscroll-behavior: none;
 }
 
