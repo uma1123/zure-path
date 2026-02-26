@@ -1,22 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { FILTER_OPTIONS } from "../../../utils/category";
-
-// 型定義
-type PlaceRecord = {
-  id: string;
-  name: string;
-  date: string; // "2月3日" など (ソート用に内部で日付変換できる想定ですが今回はモックなのでそのまま)
-  rawDate: string; // ソート用の日付データ (YYYY-MM-DD)
-  category: string; // "カフェ", "公園" など
-  time?: string;
-  distance?: string; // "300m" など
-  rating?: number;
-  comment?: string;
-  imageUrl?: string;
-};
+import {
+  type PlaceRecord,
+  getVisited,
+  getWanted,
+  getDiscovered,
+} from "../../../utils/bookmarkStorage";
 
 // 距離文字列("300m", "2.3km")をメートル数値に変換するヘルパー関数
 const parseDistance = (distStr?: string | undefined): number => {
@@ -45,100 +37,17 @@ export default function BookmarkPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   // ==========================================
-  // モックデータ定義 (ソート用に rawDate を追加)
+  // localStorage からデータ読み込み
   // ==========================================
-  const visitedData: PlaceRecord[] = [
-    {
-      id: "v1",
-      name: "shibaura coffee",
-      date: "2月3日",
-      rawDate: "2026-02-03",
-      category: "カフェ",
-      time: "11:00-18:00",
-      distance: "300m",
-      rating: 5,
-      comment: "店内が落ち着いた雰囲気でまた一人で来たい",
-    },
-    {
-      id: "v2",
-      name: "さんかく公園",
-      date: "2月3日",
-      rawDate: "2026-02-03",
-      category: "公園",
-      time: "24時間営業",
-      distance: "2.3km",
-      rating: 4,
-      comment: "疲れたらこの公園のベンチで缶コーヒーを飲みたい",
-    },
-    {
-      id: "v3",
-      name: "らーめんいちばん",
-      date: "1月29日",
-      rawDate: "2026-01-29",
-      category: "ラーメン",
-      time: "17:00-5:00",
-      distance: "2km",
-      rating: 3,
-      comment: "自分には味が少し濃かった",
-    },
-  ];
+  const [visitedData, setVisitedData] = useState<PlaceRecord[]>([]);
+  const [wantedData, setWantedData] = useState<PlaceRecord[]>([]);
+  const [discoveredData, setDiscoveredData] = useState<PlaceRecord[]>([]);
 
-  const wantedData: PlaceRecord[] = [
-    {
-      id: "w1",
-      name: "代官山 蔦屋書店",
-      date: "登録日: 2月10日",
-      rawDate: "2026-02-10",
-      category: "本屋",
-      time: "9:00-23:00",
-      distance: "5.2km",
-    },
-    {
-      id: "w2",
-      name: "ブルーボトルコーヒー",
-      date: "登録日: 2月8日",
-      rawDate: "2026-02-08",
-      category: "カフェ",
-      time: "8:00-19:00",
-      distance: "1.2km",
-    },
-    {
-      id: "w3",
-      name: "東京都現代美術館",
-      date: "登録日: 1月15日",
-      rawDate: "2026-01-15",
-      category: "美術館",
-      time: "10:00-18:00",
-      distance: "8km",
-    },
-  ];
-
-  const discoveredData: PlaceRecord[] = [
-    {
-      id: "d1",
-      name: "裏路地のパン屋",
-      date: "発見日: 2月14日",
-      rawDate: "2026-02-14",
-      category: "パン",
-      distance: "450m",
-    },
-    {
-      id: "d2",
-      name: "変な形のポスト",
-      date: "発見日: 2月14日",
-      rawDate: "2026-02-14",
-      category: "スポット",
-      distance: "120m",
-    },
-    {
-      id: "d3",
-      name: "謎の石碑",
-      date: "発見日: 1月30日",
-      rawDate: "2026-01-30",
-      category: "史跡",
-      distance: "3km",
-    },
-  ];
+  useEffect(() => {
+    setVisitedData(getVisited());
+    setWantedData(getWanted());
+    setDiscoveredData(getDiscovered());
+  }, [activeTab]); // タブ切替のたびに最新データを取得
 
   // ==========================================
   // カテゴリ定義（絞り込み用）- category.ts を使用
@@ -183,7 +92,14 @@ export default function BookmarkPage() {
     });
 
     return data;
-  }, [activeTab, sortType, selectedCategories]);
+  }, [
+    activeTab,
+    sortType,
+    selectedCategories,
+    visitedData,
+    wantedData,
+    discoveredData,
+  ]);
 
   // 日付ごとのグループ化
   const groupedData = processedData.reduce(
