@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { FILTER_OPTIONS } from "../../../utils/category";
 
 // 型定義
-type Record = {
+type PlaceRecord = {
   id: string;
   name: string;
   date: string; // "2月3日" など (ソート用に内部で日付変換できる想定ですが今回はモックなのでそのまま)
@@ -18,7 +19,7 @@ type Record = {
 };
 
 // 距離文字列("300m", "2.3km")をメートル数値に変換するヘルパー関数
-const parseDistance = (distStr?: string): number => {
+const parseDistance = (distStr?: string | undefined): number => {
   if (!distStr) return Infinity;
   if (distStr.includes("km")) {
     return parseFloat(distStr.replace("km", "")) * 1000;
@@ -46,7 +47,7 @@ export default function BookmarkPage() {
   // ==========================================
   // モックデータ定義 (ソート用に rawDate を追加)
   // ==========================================
-  const visitedData: Record[] = [
+  const visitedData: PlaceRecord[] = [
     {
       id: "v1",
       name: "shibaura coffee",
@@ -82,7 +83,7 @@ export default function BookmarkPage() {
     },
   ];
 
-  const wantedData: Record[] = [
+  const wantedData: PlaceRecord[] = [
     {
       id: "w1",
       name: "代官山 蔦屋書店",
@@ -112,7 +113,7 @@ export default function BookmarkPage() {
     },
   ];
 
-  const discoveredData: Record[] = [
+  const discoveredData: PlaceRecord[] = [
     {
       id: "d1",
       name: "裏路地のパン屋",
@@ -140,25 +141,9 @@ export default function BookmarkPage() {
   ];
 
   // ==========================================
-  // カテゴリ定義（絞り込み用）
+  // カテゴリ定義（絞り込み用）- category.ts を使用
   // ==========================================
-  const filterOptions = [
-    {
-      label: "すべての飲食店",
-      items: ["レストラン", "カフェ", "居酒屋", "ラーメン", "パン"],
-    },
-    {
-      label: "すべてのショッピング",
-      items: ["本屋", "花屋", "雑貨"],
-    },
-    {
-      label: "すべてのおすすめ",
-      items: ["公園", "土手", "美術館", "スポット", "史跡"],
-    },
-  ];
-
-  // 全カテゴリリスト（初期化や全選択用）
-  const allCategories = filterOptions.flatMap((g) => g.items);
+  const filterOptions = FILTER_OPTIONS;
 
   // カテゴリ選択のトグル処理
   const toggleCategory = (cat: string) => {
@@ -209,7 +194,7 @@ export default function BookmarkPage() {
       acc[item.date].push(item);
       return acc;
     },
-    {} as Record<string, Record[]>,
+    {} as { [key: string]: PlaceRecord[] },
   );
 
   const dates = Object.keys(groupedData);
@@ -470,7 +455,13 @@ export default function BookmarkPage() {
 }
 
 // リストアイテムコンポーネント（前回と同じ）
-function ListItem({ item, isVisited }: { item: Record; isVisited: boolean }) {
+function ListItem({
+  item,
+  isVisited,
+}: {
+  item: PlaceRecord;
+  isVisited: boolean;
+}) {
   return (
     <div className="flex gap-4">
       <div className="flex-1 min-w-0 flex flex-col justify-center">
