@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Zero Path",
+  title: "Zure Path",
   description: "方向感覚で街を探索するアプリ",
 };
 
