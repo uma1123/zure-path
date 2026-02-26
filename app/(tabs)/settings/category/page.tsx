@@ -1,54 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { FILTER_OPTIONS } from "../../../../utils/category";
+import {
+  getSelectedCategories,
+  saveSelectedCategories,
+} from "../../../../utils/categoryStorage";
 
 export default function CategorySettingsPage() {
   const router = useRouter();
 
-  // 表示カテゴリーのデータ定義
-  const filterOptions = [
-    {
-      label: "すべての飲食店",
-      items: ["レストラン", "カフェ", "居酒屋", "ラーメン", "パン"],
-    },
-    {
-      label: "すべてのショッピング",
-      items: ["本屋", "花屋", "雑貨"],
-    },
-    {
-      label: "すべてのおすすめ",
-      items: ["公園", "土手", "美術館", "スポット", "史跡"],
-    },
-  ];
+  // category.ts の定義を使用
+  const filterOptions = FILTER_OPTIONS;
 
-  // 選択状態の管理（初期値としていくつか入れています）
-  const [selectedItems, setSelectedItems] = useState<string[]>([
-    "レストラン",
-    "カフェ",
-    "公園",
-  ]);
+  // 選択状態の管理（localStorageから読み込み）
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+
+  // 初回マウント時にlocalStorageから読み込み
+  useEffect(() => {
+    setSelectedItems(getSelectedCategories());
+  }, []);
 
   // 選択切り替え処理
   const toggleItem = (item: string) => {
-    if (selectedItems.includes(item)) {
-      setSelectedItems(selectedItems.filter((i) => i !== item));
-    } else {
-      setSelectedItems([...selectedItems, item]);
-    }
+    const next = selectedItems.includes(item)
+      ? selectedItems.filter((i) => i !== item)
+      : [...selectedItems, item];
+    setSelectedItems(next);
+    saveSelectedCategories(next);
   };
 
   // セクションごとの全選択/全解除（オプション機能）
   const toggleSection = (items: string[]) => {
     const allSelected = items.every((i) => selectedItems.includes(i));
+    let next: string[];
     if (allSelected) {
       // 全解除
-      setSelectedItems(selectedItems.filter((i) => !items.includes(i)));
+      next = selectedItems.filter((i) => !items.includes(i));
     } else {
       // 全選択（未選択のものだけ足す）
       const newItems = items.filter((i) => !selectedItems.includes(i));
-      setSelectedItems([...selectedItems, ...newItems]);
+      next = [...selectedItems, ...newItems];
     }
+    setSelectedItems(next);
+    saveSelectedCategories(next);
   };
 
   return (
