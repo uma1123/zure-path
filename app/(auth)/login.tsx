@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import {
+  signInWithEmailPassword,
+  signUpWithEmailPassword,
+  signInWithGoogle,
+} from "@/utils/supabase/auth-client";
 
 export type AuthMode = "signin" | "signup";
 
@@ -13,6 +18,7 @@ type LoginProps = {
 export function Login({ mode = "signin" }: LoginProps) {
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect");
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -33,12 +39,61 @@ export function Login({ mode = "signin" }: LoginProps) {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <form
           className="space-y-6"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             setPending(true);
             setError("");
-            // TODO: Supabase signIn / signUp をここで呼ぶ
-            setPending(false);
+
+            const formData = new FormData(e.currentTarget);
+            const email = String(formData.get("email") ?? "").trim();
+            const password = String(formData.get("password") ?? "");
+            const passwordConfirm = String(
+              formData.get("passwordConfirm") ?? "",
+            );
+
+            if (!email || !password) {
+              setError("メールアドレスとパスワードを入力してください");
+              setPending(false);
+              return;
+            }
+
+            if (mode === "signup" && password !== passwordConfirm) {
+              setError("パスワードが一致しません");
+              setPending(false);
+              return;
+            }
+
+            try {
+              if (mode === "signin") {
+                const { error: signInError } =
+                  await signInWithEmailPassword(email, password);
+
+                if (signInError) {
+                  throw signInError;
+                }
+              } else {
+                const { error: signUpError } =
+                  await signUpWithEmailPassword(email, password);
+
+                if (signUpError) {
+                  throw signUpError;
+                }
+              }
+
+              // 認証成功時は redirect クエリがあればそちらへ、なければトップへ
+              router.push(redirect || "/");
+              router.refresh();
+            } catch (err) {
+              const message =
+                err instanceof Error
+                  ? err.message
+                  : mode === "signin"
+                    ? "サインインに失敗しました"
+                    : "サインアップに失敗しました";
+              setError(message);
+            } finally {
+              setPending(false);
+            }
           }}
         >
           <input type="hidden" name="redirect" value={redirect ?? ""} />
@@ -132,6 +187,23 @@ export function Login({ mode = "signin" }: LoginProps) {
             </button>
           </div>
         </form>
+
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await signInWithGoogle();
+              } catch (err) {
+                console.error("[login] google auth error", err);
+                setError("Google ログインに失敗しました");
+              }
+            }}
+            className="w-full flex justify-center items-center py-2 px-4 border border-border rounded-lg text-sm font-medium bg-white text-foreground hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+          >
+            Google でログイン
+          </button>
+        </div>
 
         <div className="mt-6">
           <div className="relative">
