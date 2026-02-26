@@ -1,21 +1,46 @@
 @import "tailwindcss";
 
 :root {
+  /* ベース: MapView と同じく白背景 + 濃いテキスト */
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #171717; /* text-gray-900 相当 */
+
+  /* サブ背景・ボーダー・アクセント（MapView の gray / green / red に寄せる） */
+  --muted: #f9fafb; /* bg-gray-50 相当 */
+  --muted-foreground: #6b7280; /* text-gray-500 相当 */
+  --border: #e5e7eb; /* border-gray-200 相当 */
+
+  /* プライマリは MapView で多用している green 系に揃える */
+  --primary: #22c55e; /* bg-green-500 */
+  --primary-foreground: #ffffff;
+
+  /* エラー系も MapView のバナーに合わせて red 系 */
+  --destructive: #ef4444; /* red-500 */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0a0a0a; /* slate-950 付近 */
+    --foreground: #ededed; /* gray-200 付近 */
+    --muted: #020617;
+    --muted-foreground: #9ca3af;
+    --border: #1f2937; /* gray-800 付近 */
+    --primary: #22c55e;
+    --primary-foreground: #ffffff;
+    --destructive: #f97373; /* red-400 付近 */
   }
 }
 
