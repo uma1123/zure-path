@@ -6,6 +6,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import SearchOverlay from "../../../components/SearchOverlay";
+import { getSelectedOsmTags } from "../../../utils/categoryStorage";
+import { getCategoryDisplay } from "../../../utils/category";
 
 type Place = {
   name: string;
@@ -13,6 +15,7 @@ type Place = {
   lng: number;
   distance: number;
   bearing: number;
+  category?: string;
 };
 
 type ExploreResponse = {
@@ -39,6 +42,9 @@ export default function MapView() {
   const [showSearch, setShowSearch] = useState(false);
   const lastFetchLocation = useRef<{ lat: number; lng: number } | null>(null);
   const [isPeeking, setIsPeeking] = useState(false);
+  const [showDiscoverPopup, setShowDiscoverPopup] = useState(false);
+  const [discoverRating, setDiscoverRating] = useState(0);
+  const [discoverMemo, setDiscoverMemo] = useState("");
 
   // 中央ボタンクリックで検索オーバーレイを表示
   const handleCenterButtonClick = () => {
@@ -50,9 +56,6 @@ export default function MapView() {
     setShowSearch(false);
     console.log("選択された目的地:", target);
   };
-
-  // ポップアップ参照を保持
-  const popupRef = useRef<maplibregl.Popup | null>(null);
 
   // 現在地を取得
   useEffect(() => {
@@ -128,7 +131,7 @@ export default function MapView() {
           currentLat: userLocation.lat,
           currentLng: userLocation.lng,
           radius: 3000,
-          placeType: "restaurant",
+          osmTags: getSelectedOsmTags(),
         }),
       });
 
@@ -217,6 +220,11 @@ export default function MapView() {
       console.error("MapLibre error:", e.error?.message || e);
     });
 
+    // マップクリックでポップアップカードを閉じる
+    map.on("click", () => {
+      setSelectedPlace(null);
+    });
+
     // 現在地マーカー（青い丸）
     const userEl = document.createElement("div");
     userEl.style.width = "18px";
@@ -263,30 +271,9 @@ export default function MapView() {
           .setLngLat([place.lng, place.lat])
           .addTo(map);
 
-        // タップでポップアップ表示 & 上部カード更新
+        // タップで上部カード更新（React stateで管理するポップアップカードを表示）
         el.addEventListener("click", (e) => {
           e.stopPropagation();
-
-          if (popupRef.current) {
-            popupRef.current.remove();
-          }
-
-          const popup = new maplibregl.Popup({
-            offset: [0, -32],
-            closeButton: false,
-            closeOnClick: true,
-            className: "custom-popup",
-          })
-            .setLngLat([place.lng, place.lat])
-            .setHTML(
-              `<div style="padding:8px 10px;min-width:120px;">
-                <p style="font-weight:700;margin:0 0 2px 0;font-size:13px;color:#111;">${place.name}</p>
-                <p style="margin:0;font-size:12px;color:#6b7280;">まで ${place.distance}m</p>
-              </div>`,
-            )
-            .addTo(map);
-
-          popupRef.current = popup;
           setSelectedPlace(place);
         });
 
@@ -308,10 +295,6 @@ export default function MapView() {
 
     return () => {
       markers.forEach((m) => m.remove());
-      if (popupRef.current) {
-        popupRef.current.remove();
-        popupRef.current = null;
-      }
     };
   }, [places]);
 
@@ -445,12 +428,22 @@ export default function MapView() {
             />
           </button>
           {/* 発見 */}
-          <button className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-400 shadow-md active:bg-yellow-500 border-2 border-white">
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-400 shadow-md active:bg-yellow-500 border-2 border-white"
+            onClick={() => {
+              if (nearest) {
+                setDiscoverRating(0);
+                setDiscoverMemo("");
+                setShowDiscoverPopup(true);
+              }
+            }}
+          >
             <Image
               src="/images/discover.svg"
               width={20}
               height={20}
               alt="Discover"
+              style={{ width: "auto", height: "auto" }}
             />
           </button>
         </div>
@@ -462,6 +455,227 @@ export default function MapView() {
           <p className="text-center text-xs text-red-500">{error}</p>
         </div>
       )}
+
+      {/* ===== 選択スポット ポップアップカード ===== */}
+      {selectedPlace &&
+        (() => {
+          const display = getCategoryDisplay(selectedPlace.category || "");
+          return (
+            <div
+              className="absolute bottom-28 left-4 right-4 z-20"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="rounded-2xl bg-white shadow-xl p-4">
+                {/* 閉じるボタン */}
+                <button
+                  onClick={() => setSelectedPlace(null)}
+                  className="absolute top-3 right-3 flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-400 active:bg-gray-200 z-10"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M1 1L11 11M11 1L1 11"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+
+                {/* カード上部: 情報 + 画像 */}
+                <div className="flex gap-3">
+                  {/* 左: テキスト情報 */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base font-bold text-gray-900 truncate pr-6">
+                      {selectedPlace.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {display.label}
+                    </p>
+                  </div>
+
+                  {/* 右: カテゴリ画像 */}
+                  <div className="w-24 h-16 shrink-0 rounded-lg overflow-hidden">
+                    <img
+                      src={display.image}
+                      alt={display.label}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                </div>
+
+                {/* カード下部: アクションボタン */}
+                <div className="flex gap-3 mt-3">
+                  <button
+                    onClick={() => {
+                      console.log("行った:", selectedPlace.name);
+                    }}
+                    className="flex-1 rounded-full bg-green-500 py-2.5 text-sm font-bold text-white active:bg-green-600 transition-colors"
+                  >
+                    行った
+                  </button>
+                  <button
+                    onClick={() => {
+                      console.log("行きたい:", selectedPlace.name);
+                    }}
+                    className="flex-1 rounded-full border-2 border-green-500 py-2.5 text-sm font-bold text-green-600 active:bg-green-50 transition-colors"
+                  >
+                    行きたい
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* ===== 発見ポップアップ ===== */}
+      {showDiscoverPopup &&
+        nearest &&
+        (() => {
+          const display = getCategoryDisplay(nearest.category || "");
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+              onClick={() => setShowDiscoverPopup(false)}
+            >
+              <div
+                className="w-full max-w-md rounded-t-3xl bg-white pb-8 animate-slide-up"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* 閉じるボタン */}
+                <button
+                  onClick={() => setShowDiscoverPopup(false)}
+                  className="absolute top-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-gray-200/80 text-gray-500 active:bg-gray-300"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M1 1L11 11M11 1L1 11"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+
+                {/* === 上部: 撮影・評価・メモ === */}
+                <div className="px-5 pt-5">
+                  {/* 撮影エリア */}
+                  {/* ここは仮のUI。実装段階でカメラ起動や写真選択のUIに置き換える予定。 */}
+                  <div className="flex items-center justify-center rounded-2xl bg-gray-100 h-40 mb-4">
+                    <div className="flex flex-col items-center gap-2 text-gray-400">
+                      <svg
+                        width="32"
+                        height="32"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                      <span className="text-sm font-medium">撮影する</span>
+                    </div>
+                  </div>
+
+                  {/* 星評価 */}
+                  <div className="flex items-center justify-center gap-1 mb-4">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setDiscoverRating(star)}
+                        className="p-0.5"
+                      >
+                        <svg
+                          width="28"
+                          height="28"
+                          viewBox="0 0 24 24"
+                          fill={star <= discoverRating ? "#FBBF24" : "none"}
+                          stroke={
+                            star <= discoverRating ? "#FBBF24" : "#D1D5DB"
+                          }
+                          strokeWidth="1.5"
+                        >
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ひとことメモ */}
+                  <div className="flex items-start gap-2 mb-4">
+                    <svg
+                      className="mt-2.5 shrink-0 text-gray-400"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="ひとことメモ"
+                      value={discoverMemo}
+                      onChange={(e) => setDiscoverMemo(e.target.value)}
+                      className="flex-1 border-b border-gray-200 py-2 text-sm text-gray-700 placeholder-gray-400 outline-none focus:border-green-400 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* 区切り線 */}
+                <div className="h-px bg-gray-100 mx-5 mb-4" />
+
+                {/* === 下部: スポット情報（既存ポップアップと同じ） === */}
+                <div className="px-5">
+                  <div className="flex gap-3 mb-4">
+                    {/* 左: テキスト情報 */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base font-bold text-gray-900 truncate">
+                        {nearest.name}
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {display.label}
+                      </p>
+                    </div>
+                    {/* 右: カテゴリ画像 */}
+                    <div className="w-24 h-16 shrink-0 rounded-lg overflow-hidden">
+                      <img
+                        src={display.image}
+                        alt={display.label}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 行ったボタン */}
+                  <button
+                    onClick={() => {
+                      console.log(
+                        "発見:",
+                        nearest.name,
+                        "評価:",
+                        discoverRating,
+                        "メモ:",
+                        discoverMemo,
+                      );
+                      setShowDiscoverPopup(false);
+                    }}
+                    className="w-full rounded-full bg-green-500 py-3 text-sm font-bold text-white active:bg-green-600 transition-colors"
+                  >
+                    行った
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       <SearchOverlay
         isOpen={showSearch}
