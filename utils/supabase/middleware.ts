@@ -29,8 +29,38 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // ユーザー情報を取得してセッションを更新
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const url = new URL(request.url);
+  const isAuthPath =
+    url.pathname === "/sign-in" || url.pathname === "/sign-up";
+
+  // 未ログインで認証ページ以外にアクセスした場合は /login にリダイレクト
+  if (!user && !isAuthPath) {
+    const redirectUrl = new URL("/sign-in", request.url);
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+
+    // Supabase が更新したクッキーをリダイレクトレスポンスにも反映
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+
+    return redirectResponse;
+  }
+
+  // ログイン済みで /sign-in, /sign-up にアクセスした場合はトップへ戻す
+  if (user && isAuthPath) {
+    const redirectUrl = new URL("/", request.url);
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+
+    return redirectResponse;
+  }
 
   return supabaseResponse;
 }
