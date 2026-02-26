@@ -93,6 +93,20 @@ function isWithinDirectionRange(
   return Math.abs(diff) <= halfAngle;
 }
 
+// OSM要素のタグから、検索に使われたOSMタグ（例: "amenity=cafe"）を特定する
+function getMatchedOsmTag(
+  tags: OSMTags,
+  searchTags: string[],
+): string | undefined {
+  for (const searchTag of searchTags) {
+    const [key, value] = searchTag.split("=");
+    if (key && value && tags[key] === value) {
+      return searchTag;
+    }
+  }
+  return undefined;
+}
+
 export async function POST(request: Request) {
   try {
     // 画面側から送信された情報を受け取る
@@ -100,7 +114,17 @@ export async function POST(request: Request) {
     const lat = Number(body.currentLat);
     const lng = Number(body.currentLng);
     const radius = Number(body.radius) || 1000;
-    const placeType = String(body.placeType);
+
+    // osmTags配列を受け取る（例: ["amenity=cafe", "shop=bakery"])
+    // 後方互換: placeTypeが渡された場合は従来通り動作
+    let osmTags: string[] = [];
+    if (Array.isArray(body.osmTags) && body.osmTags.length > 0) {
+      osmTags = body.osmTags.map(String);
+    } else if (body.placeType) {
+      // 後方互換: 単一placeTypeをamenity/leisureとして検索
+      const pt = String(body.placeType);
+      osmTags = [`amenity=${pt}`, `leisure=${pt}`];
+    }
 
     // 方角フィルタリングのパラメータ（任意）
     // direction: 方角の名前（"north", "east"等）または角度（0〜360）
@@ -147,13 +171,24 @@ export async function POST(request: Request) {
     // Overpass APIへのリクエストを実行する内部関数
     // 全サーバーに並列でリクエストし、最初に成功したレスポンスを採用する（Promise.any）
     async function fetchOverpass(searchRadius: number): Promise<OSMResponse> {
+      // osmTagsからOverpassクエリの検索条件を動的生成
+      // 例: "amenity=cafe" → node["amenity"="cafe"](around:...); way["amenity"="cafe"](around:...);
+      const queryStatements = osmTags
+        .map((tag) => {
+          const [key, value] = tag.split("=");
+          if (!key || !value) return "";
+          return [
+            `node["${key}"="${value}"](around:${searchRadius}, ${lat}, ${lng});`,
+            `way["${key}"="${value}"](around:${searchRadius}, ${lat}, ${lng});`,
+          ].join("\n          ");
+        })
+        .filter(Boolean)
+        .join("\n          ");
+
       const query = `
-        [out:json][timeout:10];
+        [out:json][timeout:15];
         (
-          node["leisure"="${placeType}"](around:${searchRadius}, ${lat}, ${lng});
-          node["amenity"="${placeType}"](around:${searchRadius}, ${lat}, ${lng});
-          way["leisure"="${placeType}"](around:${searchRadius}, ${lat}, ${lng});
-          way["amenity"="${placeType}"](around:${searchRadius}, ${lat}, ${lng});
+          ${queryStatements}
         );
         out center;
       `;
@@ -209,6 +244,7 @@ export async function POST(request: Request) {
       lng: number;
       distance: number;
       bearing: number;
+      category: string;
     }[] = [];
     let actualRadius = radius;
 
@@ -243,6 +279,7 @@ export async function POST(request: Request) {
             lng: placeLng,
             distance,
             bearing: Math.round(bearing * 10) / 10,
+            category: getMatchedOsmTag(element.tags!, osmTags) || "",
           };
         });
 
@@ -290,6 +327,7 @@ export async function POST(request: Request) {
               lng: placeLng,
               distance,
               bearing: Math.round(bearing * 10) / 10,
+              category: getMatchedOsmTag(element.tags!, osmTags) || "",
             };
           });
 
