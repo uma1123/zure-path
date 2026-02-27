@@ -7,7 +7,7 @@ import { signInWithGoogle } from "@/utils/supabase/auth-client";
 /** ピンアイコンの配置データ */
 const PIN_ICONS = [
   {
-    src: "/icon/kankou_4.svg",
+    src: "/icon/kankou_4.webp",
     alt: "観光",
     top: "8%",
     left: "5%",
@@ -16,7 +16,7 @@ const PIN_ICONS = [
     size: 72,
   },
   {
-    src: "/icon/inshoku_4.svg",
+    src: "/icon/inshoku_4.webp",
     alt: "飲食",
     top: "5%",
     right: "10%",
@@ -25,7 +25,7 @@ const PIN_ICONS = [
     size: 64,
   },
   {
-    src: "/icon/noodle_4.svg",
+    src: "/icon/noodle_4.webp",
     alt: "麺類",
     top: "35%",
     left: "2%",
@@ -34,7 +34,7 @@ const PIN_ICONS = [
     size: 60,
   },
   {
-    src: "/icon/shop_4.svg",
+    src: "/icon/shop_4.webp",
     alt: "ショップ",
     top: "30%",
     right: "3%",
@@ -43,7 +43,7 @@ const PIN_ICONS = [
     size: 64,
   },
   {
-    src: "/icon/park_4.svg",
+    src: "/icon/park_4.webp",
     alt: "公園",
     bottom: "12%",
     left: "8%",
@@ -52,7 +52,7 @@ const PIN_ICONS = [
     size: 60,
   },
   {
-    src: "/icon/entame_4.svg",
+    src: "/icon/entame_4.webp",
     alt: "エンタメ",
     bottom: "8%",
     right: "5%",
