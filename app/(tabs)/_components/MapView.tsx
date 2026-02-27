@@ -206,14 +206,16 @@ export default function MapView() {
     if (!mainDestination) return;
 
     const el = document.createElement("div");
-    el.style.width = "24px";
-    el.style.height = "24px";
-    el.style.borderRadius = "50%";
-    el.style.backgroundColor = "#ef4444";
-    el.style.border = "3px solid white";
-    el.style.boxShadow = "0 0 8px rgba(239,68,68,0.7)";
+    el.style.width = "80px";
+    el.style.height = "80px";
+    el.style.backgroundImage = 'url("/icon/目的地.png")';
+    el.style.backgroundSize = "contain";
+    el.style.backgroundRepeat = "no-repeat";
+    el.style.backgroundPosition = "center";
+    el.style.cursor = "pointer";
+    el.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,0.35))";
 
-    const marker = new maplibregl.Marker({ element: el })
+    const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
       .setLngLat([mainDestination.lng, mainDestination.lat])
       .addTo(map);
 
