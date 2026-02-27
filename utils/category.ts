@@ -156,113 +156,122 @@ const OSM_TAG_TO_DISPLAY: Record<string, CategoryDisplay> = {
   // --- 飲食店 ---
   "amenity=restaurant": {
     label: "レストラン",
-    image: "/category-image/restaurant.jpg",
+    image: "/category-image/restaurant.webp",
   },
-  "amenity=cafe": { label: "カフェ", image: "/category-image/cafe.jpg" },
+  "amenity=cafe": { label: "カフェ", image: "/category-image/cafe.webp" },
   "amenity=pub": {
     label: "居酒屋・バー",
-    image: "/category-image/bar.jpg",
+    image: "/category-image/bar.webp",
   },
-  "amenity=bar": { label: "バー", image: "/category-image/bar.jpg" },
+  "amenity=bar": { label: "バー", image: "/category-image/bar.webp" },
   "amenity=biergarten": {
     label: "ビアガーデン",
-    image: "/category-image/bia-garden.jpg",
+    image: "/category-image/bia-garden.webp",
   },
   "amenity=fast_food": {
     label: "ファーストフード",
-    image: "/category-image/fastfood.jpg",
+    image: "/category-image/fastfood.webp",
   },
-  "shop=bakery": { label: "パン屋", image: "/category-image/pan.jpg" },
+  "shop=bakery": { label: "パン屋", image: "/category-image/pan.webp" },
   "shop=confectionery": {
     label: "スイーツ",
-    image: "/category-image/sweets.jpg",
+    image: "/category-image/sweets.webp",
   },
 
   // --- ショッピング ---
-  "shop=books": { label: "書店", image: "/category-image/book.jpg" },
+  "shop=books": { label: "書店", image: "/category-image/book.webp" },
   "shop=variety_store": {
     label: "雑貨店",
-    image: "/category-image/zakkaten.jpg",
+    image: "/category-image/zakkaten.webp",
   },
-  "shop=gift": { label: "ギフトショップ", image: "/category-image/gift.jpg" },
-  "shop=general": { label: "雑貨店", image: "/category-image/zakkaten.jpg" },
-  "shop=florist": { label: "花屋", image: "/category-image/flower.jpg" },
-  "shop=garden_centre": { label: "園芸店", image: "/category-image/engei.jpg" },
+  "shop=gift": { label: "ギフトショップ", image: "/category-image/gift.webp" },
+  "shop=general": { label: "雑貨店", image: "/category-image/zakkaten.webp" },
+  "shop=florist": { label: "花屋", image: "/category-image/flower.webp" },
+  "shop=garden_centre": {
+    label: "園芸店",
+    image: "/category-image/engei.webp",
+  },
   "amenity=marketplace": {
     label: "マルシェ",
-    image: "/category-image/shop.jpg",
+    image: "/category-image/shop.webp",
   },
   "shop=department_store": {
     label: "百貨店",
-    image: "/category-image/shop.jpg",
+    image: "/category-image/shop.webp",
   },
-  "shop=mall": { label: "モール", image: "/category-image/shop.jpg" },
+  "shop=mall": { label: "モール", image: "/category-image/shop.webp" },
   "shop=stationery": {
     label: "文房具店",
-    image: "/category-image/bunbougu.jpg",
+    image: "/category-image/bunbougu.webp",
   },
 
   // --- 公園・自然 ---
-  "leisure=park": { label: "公園", image: "/category-image/park.jpg" },
-  "leisure=playground": { label: "公園", image: "/category-image/park.jpg" },
-  "leisure=common": { label: "広場", image: "/category-image/park.jpg" },
-  "leisure=plaza": { label: "広場", image: "/category-image/park.jpg" },
-  "natural=spring": { label: "湧き水", image: "/category-image/park.jpg" },
+  "leisure=park": { label: "公園", image: "/category-image/park.webp" },
+  "leisure=playground": { label: "公園", image: "/category-image/park.webp" },
+  "leisure=common": { label: "広場", image: "/category-image/park.webp" },
+  "leisure=plaza": { label: "広場", image: "/category-image/park.webp" },
+  "natural=spring": { label: "湧き水", image: "/category-image/park.webp" },
   "natural=tree": {
     label: "シンボルツリー",
-    image: "/category-image/park.jpg",
+    image: "/category-image/park.webp",
   },
-  "natural=coastline": { label: "海岸", image: "/category-image/kaigan.jpg" },
-  "natural=water": { label: "水辺", image: "/category-image/mizube.jpg" },
-  "natural=peak": { label: "山頂", image: "/category-image/santyou.jpg" },
+  "natural=coastline": { label: "海岸", image: "/category-image/kaigan.webp" },
+  "natural=water": { label: "水辺", image: "/category-image/mizube.webp" },
+  "natural=peak": { label: "山頂", image: "/category-image/santyou.webp" },
 
   // --- 観光・絶景 ---
   "tourism=viewpoint": {
     label: "展望台",
-    image: "/category-image/tenboudai.jpg",
+    image: "/category-image/tenboudai.webp",
   },
-  "man_made=lighthouse": { label: "灯台", image: "/category-image/toudai.jpg" },
+  "man_made=lighthouse": {
+    label: "灯台",
+    image: "/category-image/toudai.webp",
+  },
   "historic=monument": {
     label: "モニュメント",
-    image: "/category-image/travel.jpg",
+    image: "/category-image/travel.webp",
   },
   "historic=memorial": {
     label: "記念碑",
-    image: "/category-image/kinenhi.jpg",
+    image: "/category-image/kinenhi.webp",
   },
   "amenity=place_of_worship": {
     label: "神社・寺",
-    image: "/category-image/zinja.jpg",
+    image: "/category-image/zinja.webp",
   },
-  "historic=castle": { label: "城", image: "/category-image/shiro.jpg" },
-  "historic=ruins": { label: "史跡", image: "/category-image/shiseki.jpg" },
-  "amenity=fountain": { label: "噴水", image: "/category-image/hunsui.jpg" },
+  "historic=castle": { label: "城", image: "/category-image/shiro.webp" },
+  "historic=ruins": { label: "史跡", image: "/category-image/shiseki.webp" },
+  "amenity=fountain": { label: "噴水", image: "/category-image/hunsui.webp" },
   "tourism=museum": {
     label: "博物館",
-    image: "/category-image/hakubutukan.jpg",
+    image: "/category-image/hakubutukan.webp",
   },
-  "tourism=artwork": { label: "アート", image: "/category-image/art.jpg" },
-  "tourism=zoo": { label: "動物園", image: "/category-image/zoo.jpg" },
+  "tourism=artwork": { label: "アート", image: "/category-image/art.webp" },
+  "tourism=zoo": { label: "動物園", image: "/category-image/zoo.webp" },
   "tourism=aquarium": {
     label: "水族館",
-    image: "/category-image/suizokukan.jpg",
+    image: "/category-image/suizokukan.webp",
   },
 
   // --- エンタメ ---
-  "amenity=cinema": { label: "映画館", image: "/category-image/eigakan.jpg" },
-  "amenity=theatre": { label: "劇場", image: "/category-image/gekizyou.jpg" },
+  "amenity=cinema": { label: "映画館", image: "/category-image/eigakan.webp" },
+  "amenity=theatre": { label: "劇場", image: "/category-image/gekizyou.webp" },
   "tourism=theme_park": {
     label: "テーマパーク",
-    image: "/category-image/te-mapa-ku.jpg",
+    image: "/category-image/te-mapa-ku.webp",
   },
-  "amenity=library": { label: "図書館", image: "/category-image/book.jpg" },
-  "amenity=public_bath": { label: "銭湯", image: "/category-image/sentou.jpg" },
-  "amenity=spa": { label: "スパ", image: "/category-image/supa.jpg" },
+  "amenity=library": { label: "図書館", image: "/category-image/book.webp" },
+  "amenity=public_bath": {
+    label: "銭湯",
+    image: "/category-image/sentou.webp",
+  },
+  "amenity=spa": { label: "スパ", image: "/category-image/supa.webp" },
 };
 
 const DEFAULT_DISPLAY: CategoryDisplay = {
   label: "スポット",
-  image: "/category-image/travel.jpg",
+  image: "/category-image/travel.webp",
 };
 
 /**
@@ -383,11 +392,11 @@ export const getPinCategory = (osmTag: string): PinCategory => {
  * OSMタグとピン状態からアイコンパスを取得する
  * @param osmTag - OSMタグ（例: "amenity=cafe"）
  * @param state - 1=デフォルト, 2=行きたい, 3=行った, 4=発見
- * @returns アイコンパス（例: "/icon/inshoku_1.svg"）
+ * @returns アイコンパス（例: "/icon/inshoku_1.webp"）
  */
 export const getPinIconPath = (osmTag: string, state: PinState = 1): string => {
   const category = getPinCategory(osmTag);
-  return `/icon/${category}_${state}.svg`;
+  return `/icon/${category}_${state}.webp`;
 };
 
 /**
@@ -403,9 +412,9 @@ export const getCategoryNamePinCategory = (
 /**
  * 日本語カテゴリ名から発見ピン（_4）のアイコンパスを取得する
  * @param categoryName - 日本語カテゴリ名（例: "カフェ"）
- * @returns アイコンパス（例: "/icon/inshoku_4.svg"）
+ * @returns アイコンパス（例: "/icon/inshoku_4.webp"）
  */
 export const getDiscoverPinIconPath = (categoryName: string): string => {
   const pinCategory = getCategoryNamePinCategory(categoryName);
-  return `/icon/${pinCategory}_4.svg`;
+  return `/icon/${pinCategory}_4.webp`;
 };
