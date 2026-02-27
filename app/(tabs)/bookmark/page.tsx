@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { FILTER_OPTIONS } from "../../../utils/category";
 import {
   type PlaceRecord,
@@ -365,6 +366,23 @@ export default function BookmarkPage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* ===== 履歴アイコン（右下固定） ===== */}
+      <div className="fixed bottom-2 right-3 z-30">
+        <button
+          onClick={() => {
+            router.push("/bookmark/history");
+          }}
+        >
+          <Image
+            src="/icon/history.svg"
+            width={60}
+            height={60}
+            alt="履歴アイコン"
+            className="opacity-50"
+          />
+        </button>
       </div>
     </div>
   );
