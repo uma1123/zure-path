@@ -8,12 +8,14 @@ type Props = {
   selectedPlace: Place;
   onClose: () => void;
   onVisited: (place: Place) => void;
+  onBookmarkChange?: () => void;
 };
 
 export default function PlacePopupCard({
   selectedPlace,
   onClose,
   onVisited,
+  onBookmarkChange,
 }: Props) {
   const display = getCategoryDisplay(selectedPlace.category || "");
 
@@ -71,6 +73,7 @@ export default function PlacePopupCard({
           <button
             onClick={() => {
               saveWanted(selectedPlace);
+              onBookmarkChange?.();
               onClose();
             }}
             className="flex-1 rounded-full border-2 border-green-500 py-2.5 text-sm font-bold text-green-600 active:bg-green-50 transition-colors"

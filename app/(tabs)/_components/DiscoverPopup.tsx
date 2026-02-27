@@ -7,9 +7,16 @@ import { saveDiscovered } from "../../../utils/bookmarkStorage";
 type Props = {
   show: boolean;
   onClose: () => void;
+  userLocation: { lat: number; lng: number } | null;
+  onSaved?: () => void;
 };
 
-export default function DiscoverPopup({ show, onClose }: Props) {
+export default function DiscoverPopup({
+  show,
+  onClose,
+  userLocation,
+  onSaved,
+}: Props) {
   const [name, setName] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [memo, setMemo] = useState("");
@@ -26,12 +33,15 @@ export default function DiscoverPopup({ show, onClose }: Props) {
       selectedCategory,
       memo,
       photoPreview ?? undefined,
+      userLocation?.lat,
+      userLocation?.lng,
     );
     // リセット
     setName("");
     setSelectedCategory("");
     setMemo("");
     setPhotoPreview(null);
+    onSaved?.();
     onClose();
   };
 

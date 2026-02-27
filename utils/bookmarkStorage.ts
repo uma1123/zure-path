@@ -11,6 +11,8 @@ export type PlaceRecord = {
   rating?: number;
   comment?: string;
   imageUrl?: string;
+  lat?: number;
+  lng?: number;
 };
 
 const VISITED_KEY = "zeropath_visited";
@@ -96,6 +98,8 @@ export function saveDiscovered(
   category: string,
   comment?: string,
   imageUrl?: string,
+  lat?: number,
+  lng?: number,
 ): void {
   const records = load(DISCOVERED_KEY);
   const { date, rawDate } = formatDateParts(new Date());
@@ -107,6 +111,8 @@ export function saveDiscovered(
     category: category || "スポット",
     comment: comment || undefined,
     imageUrl: imageUrl || undefined,
+    lat,
+    lng,
   });
   persist(DISCOVERED_KEY, records);
 }
@@ -124,4 +130,14 @@ export function getWanted(): PlaceRecord[] {
 /** 発見リストを取得 */
 export function getDiscovered(): PlaceRecord[] {
   return load(DISCOVERED_KEY);
+}
+
+/** 指定スポットが「行きたい」に登録済みかチェック */
+export function isWanted(placeName: string): boolean {
+  return load(WANTED_KEY).some((r) => r.name === placeName);
+}
+
+/** 指定スポットが「行った」に登録済みかチェック */
+export function isVisited(placeName: string): boolean {
+  return load(VISITED_KEY).some((r) => r.name === placeName);
 }
