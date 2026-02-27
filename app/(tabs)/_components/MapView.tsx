@@ -6,6 +6,16 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import SearchOverlay from "../../../components/SearchOverlay";
 import { useUserLocation } from "./hooks/useUserLocation";
 import { useFetchPlaces } from "./hooks/useFetchPlaces";
+import {
+  getPinIconPath,
+  getDiscoverPinIconPath,
+  type PinState,
+} from "../../../utils/category";
+import {
+  isWanted,
+  isVisited,
+  getDiscovered,
+} from "../../../utils/bookmarkStorage";
 import type { Place } from "./types";
 import NearestPlaceCard from "./NearestPlaceCard";
 import ActionButtons from "./ActionButtons";
@@ -32,6 +42,8 @@ export default function MapView() {
   const [showVisitedPopup, setShowVisitedPopup] = useState(false);
   const [visitedTarget, setVisitedTarget] = useState<Place | null>(null);
   const [showDiscoverPopup, setShowDiscoverPopup] = useState(false);
+  // マーカー再描画トリガー（行きたい/行った/発見保存後にインクリメント）
+  const [markerVersion, setMarkerVersion] = useState(0);
 
   // 中央ボタンクリックで検索オーバーレイを表示
   const handleCenterButtonClick = () => {
@@ -134,19 +146,28 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map || places.length === 0) return;
 
+    // 場所の状態からピンステートを判定
+    const getPlacePinState = (place: Place): PinState => {
+      if (isVisited(place.name)) return 3;
+      if (isWanted(place.name)) return 2;
+      return 1;
+    };
+
     const addMarkers = () => {
       const markers: maplibregl.Marker[] = [];
 
       places.forEach((place) => {
-        // ティアドロップ型ピンマーカー
+        const pinState = getPlacePinState(place);
+        const iconPath = getPinIconPath(place.category || "", pinState);
+
+        // カテゴリ別アイコンマーカー
         const el = document.createElement("div");
-        el.style.width = "32px";
-        el.style.height = "32px";
-        el.style.backgroundImage = `url("data:image/svg+xml,${encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40"><ellipse cx="16" cy="14" rx="12" ry="12" fill="white" stroke="#d1d5db" stroke-width="1.5"/><path d="M16 40 C16 40 4 22 4 14 A12 12 0 0 1 28 14 C28 22 16 40 16 40Z" fill="white" stroke="#d1d5db" stroke-width="1.5"/><ellipse cx="16" cy="14" rx="8" ry="8" fill="#9CA3AF"/></svg>`,
-        )}")`;
+        el.style.width = "100px";
+        el.style.height = "100px";
+        el.style.backgroundImage = `url("${iconPath}")`;
         el.style.backgroundSize = "contain";
         el.style.backgroundRepeat = "no-repeat";
+        el.style.backgroundPosition = "center";
         el.style.cursor = "pointer";
         el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.25))";
 
@@ -179,7 +200,56 @@ export default function MapView() {
     return () => {
       markers.forEach((m) => m.remove());
     };
-  }, [places]);
+  }, [places, markerVersion]);
+
+  // 発見スポットのマーカーを描画
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const addDiscoverMarkers = () => {
+      const markers: maplibregl.Marker[] = [];
+      const discovered = getDiscovered();
+
+      discovered.forEach((record) => {
+        if (record.lat == null || record.lng == null) return;
+
+        const iconPath = getDiscoverPinIconPath(record.category);
+
+        const el = document.createElement("div");
+        el.style.width = "60px";
+        el.style.height = "60px";
+        el.style.backgroundImage = `url("${iconPath}")`;
+        el.style.backgroundSize = "contain";
+        el.style.backgroundRepeat = "no-repeat";
+        el.style.backgroundPosition = "center";
+        el.style.cursor = "pointer";
+        el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.25))";
+
+        const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+          .setLngLat([record.lng, record.lat])
+          .addTo(map);
+
+        markers.push(marker);
+      });
+
+      return markers;
+    };
+
+    let markers: maplibregl.Marker[] = [];
+
+    if (map.loaded()) {
+      markers = addDiscoverMarkers();
+    } else {
+      map.on("load", () => {
+        markers = addDiscoverMarkers();
+      });
+    }
+
+    return () => {
+      markers.forEach((m) => m.remove());
+    };
+  }, [markerVersion]);
 
   // マップの表示切替
   useEffect(() => {
@@ -279,6 +349,7 @@ export default function MapView() {
             setVisitedTarget(place);
             setShowVisitedPopup(true);
           }}
+          onBookmarkChange={() => setMarkerVersion((v) => v + 1)}
         />
       )}
 
@@ -290,6 +361,7 @@ export default function MapView() {
           onClose={() => {
             setShowVisitedPopup(false);
             setVisitedTarget(null);
+            setMarkerVersion((v) => v + 1);
           }}
         />
       )}
@@ -298,6 +370,8 @@ export default function MapView() {
       <DiscoverPopup
         show={showDiscoverPopup}
         onClose={() => setShowDiscoverPopup(false)}
+        userLocation={userLocation}
+        onSaved={() => setMarkerVersion((v) => v + 1)}
       />
 
       <SearchOverlay
