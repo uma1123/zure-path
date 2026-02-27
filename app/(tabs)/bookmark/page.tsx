@@ -38,16 +38,23 @@ export default function BookmarkPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   // ==========================================
-  // localStorage からデータ読み込み
+  // DB からデータ読み込み
   // ==========================================
   const [visitedData, setVisitedData] = useState<PlaceRecord[]>([]);
   const [wantedData, setWantedData] = useState<PlaceRecord[]>([]);
   const [discoveredData, setDiscoveredData] = useState<PlaceRecord[]>([]);
 
   useEffect(() => {
-    setVisitedData(getVisited());
-    setWantedData(getWanted());
-    setDiscoveredData(getDiscovered());
+    (async () => {
+      const [v, w, d] = await Promise.all([
+        getVisited(),
+        getWanted(),
+        getDiscovered(),
+      ]);
+      setVisitedData(v);
+      setWantedData(w);
+      setDiscoveredData(d);
+    })();
   }, [activeTab]); // タブ切替のたびに最新データを取得
 
   // ==========================================

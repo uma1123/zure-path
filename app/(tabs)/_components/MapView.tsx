@@ -288,43 +288,45 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map) return;
 
-    const addDiscoverMarkers = () => {
-      const markers: maplibregl.Marker[] = [];
-      const discovered = getDiscovered();
-
-      discovered.forEach((record) => {
-        if (record.lat == null || record.lng == null) return;
-
-        const iconPath = getDiscoverPinIconPath(record.category);
-
-        const el = document.createElement("div");
-        el.style.width = "60px";
-        el.style.height = "60px";
-        el.style.backgroundImage = `url("${iconPath}")`;
-        el.style.backgroundSize = "contain";
-        el.style.backgroundRepeat = "no-repeat";
-        el.style.backgroundPosition = "center";
-        el.style.cursor = "pointer";
-        el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.25))";
-
-        const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
-          .setLngLat([record.lng, record.lat])
-          .addTo(map);
-
-        markers.push(marker);
-      });
-
-      return markers;
-    };
-
     let markers: maplibregl.Marker[] = [];
 
-    if (map.loaded()) {
-      markers = addDiscoverMarkers();
-    } else {
-      map.on("load", () => {
-        markers = addDiscoverMarkers();
+    const addDiscoverMarkers = () => {
+      void getDiscovered().then((discovered) => {
+        // 既存マーカーをクリア
+        markers.forEach((m) => m.remove());
+        markers = [];
+
+        discovered.forEach((record) => {
+          if (record.lat == null || record.lng == null) return;
+
+          const iconPath = getDiscoverPinIconPath(record.category);
+
+          const el = document.createElement("div");
+          el.style.width = "60px";
+          el.style.height = "60px";
+          el.style.backgroundImage = `url("${iconPath}")`;
+          el.style.backgroundSize = "contain";
+          el.style.backgroundRepeat = "no-repeat";
+          el.style.backgroundPosition = "center";
+          el.style.cursor = "pointer";
+          el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.25))";
+
+          const marker = new maplibregl.Marker({
+            element: el,
+            anchor: "bottom",
+          })
+            .setLngLat([record.lng, record.lat])
+            .addTo(map);
+
+          markers.push(marker);
+        });
       });
+    };
+
+    if (map.loaded()) {
+      addDiscoverMarkers();
+    } else {
+      map.on("load", addDiscoverMarkers);
     }
 
     return () => {

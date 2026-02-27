@@ -1,5 +1,8 @@
 import type { Place } from "../app/(tabs)/_components/types";
 
+const visitedNames = new Set<string>();
+const wantedNames = new Set<string>();
+
 export type PlaceRecord = {
   id: string;
   name: string;
@@ -15,39 +18,9 @@ export type PlaceRecord = {
   lng?: number;
 };
 
-const VISITED_KEY = "zeropath_visited";
-const WANTED_KEY = "zeropath_wanted";
-const DISCOVERED_KEY = "zeropath_discovered";
-
 // --------------------------------------------------
-// 内部ヘルパー
+// 公開API
 // --------------------------------------------------
-function formatDateParts(date: Date): { date: string; rawDate: string } {
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  return {
-    date: `${month}月${day}日`,
-    rawDate: date.toISOString().split("T")[0],
-  };
-}
-
-function metersToString(meters: number): string {
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`;
-  return `${Math.round(meters)}m`;
-}
-
-function load(key: string): PlaceRecord[] {
-  if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(key) || "[]") as PlaceRecord[];
-  } catch {
-    return [];
-  }
-}
-
-function persist(key: string, records: PlaceRecord[]): void {
-  localStorage.setItem(key, JSON.stringify(records));
-}
 
 // --------------------------------------------------
 // 公開API
@@ -60,36 +33,43 @@ export function saveVisited(
   comment?: string,
   imageUrl?: string,
 ): void {
-  const records = load(VISITED_KEY);
-  const { date, rawDate } = formatDateParts(new Date());
-  records.unshift({
-    id: `v-${Date.now()}`,
-    name: place.name,
-    date,
-    rawDate,
-    category: place.category ?? "",
-    distance: metersToString(place.distance),
-    rating,
-    comment: comment || undefined,
-    imageUrl: imageUrl || undefined,
-  });
-  persist(VISITED_KEY, records);
+  // DB に保存（失敗しても画面側はそのまま）
+  if (typeof window !== "undefined") {
+    visitedNames.add(place.name);
+    void fetch("/api/bookmarks/visited", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: place.name,
+        category: place.category ?? "",
+        distanceMeters: place.distance,
+        rating,
+        comment,
+        imageUrl,
+      }),
+    }).catch(() => {
+      // サイレントに失敗
+    });
+  }
 }
 
 /** 「行きたい」として保存（同名スポットが既にある場合はスキップ） */
 export function saveWanted(place: Place): void {
-  const records = load(WANTED_KEY);
-  if (records.some((r) => r.name === place.name)) return;
-  const { date, rawDate } = formatDateParts(new Date());
-  records.unshift({
-    id: `w-${Date.now()}`,
-    name: place.name,
-    date: `登録日: ${date}`,
-    rawDate,
-    category: place.category ?? "",
-    distance: metersToString(place.distance),
-  });
-  persist(WANTED_KEY, records);
+  // DB に保存（失敗しても画面側はそのまま）
+  if (typeof window !== "undefined") {
+    wantedNames.add(place.name);
+    void fetch("/api/bookmarks/wanted", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: place.name,
+        category: place.category ?? "",
+        distanceMeters: place.distance,
+      }),
+    }).catch(() => {
+      // サイレントに失敗
+    });
+  }
 }
 
 /** 「発見した」として保存（自由入力スポット） */
@@ -101,43 +81,170 @@ export function saveDiscovered(
   lat?: number,
   lng?: number,
 ): void {
-  const records = load(DISCOVERED_KEY);
-  const { date, rawDate } = formatDateParts(new Date());
-  records.unshift({
-    id: `d-${Date.now()}`,
-    name,
-    date: `発見日: ${date}`,
-    rawDate,
-    category: category || "スポット",
-    comment: comment || undefined,
-    imageUrl: imageUrl || undefined,
-    lat,
-    lng,
-  });
-  persist(DISCOVERED_KEY, records);
+  if (typeof window !== "undefined") {
+    void fetch("/api/bookmarks/discovered", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        category,
+        comment,
+        imageUrl,
+        lat,
+        lng,
+      }),
+    }).catch(() => {
+      // サイレントに失敗
+    });
+  }
 }
 
 /** 行ったリストを取得 */
-export function getVisited(): PlaceRecord[] {
-  return load(VISITED_KEY);
+export async function getVisited(): Promise<PlaceRecord[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/bookmarks/visited");
+    const data = await res.json();
+    if (!res.ok || data.status !== "success") {
+      console.error("getVisited failed:", data.detail || data.message);
+      return [];
+    }
+    const rows = (data.rows as any[]) ?? [];
+
+    visitedNames.clear();
+
+    return rows.map((row) => {
+      const createdAt = row.created_at
+        ? new Date(row.created_at)
+        : new Date();
+      const rawDate = createdAt.toISOString().split("T")[0];
+      const [year, month, day] = rawDate.split("-").map((x: string) =>
+        Number(x),
+      );
+      const name = row.name as string;
+      visitedNames.add(name);
+
+      return {
+        id: String(row.id),
+        name,
+        date: `${month}月${day}日`,
+        rawDate,
+        category: (row.category as string) ?? "",
+        distance:
+          typeof row.distance_m === "number"
+            ? row.distance_m >= 1000
+              ? `${(row.distance_m / 1000).toFixed(1)}km`
+              : `${Math.round(row.distance_m)}m`
+            : undefined,
+        rating: row.rating ?? undefined,
+        comment: row.comment ?? undefined,
+        imageUrl: row.image_url ?? undefined,
+      } satisfies PlaceRecord;
+    });
+  } catch (e) {
+    console.error("getVisited unexpected error:", e);
+    return [];
+  }
 }
 
 /** 行きたいリストを取得 */
-export function getWanted(): PlaceRecord[] {
-  return load(WANTED_KEY);
+export async function getWanted(): Promise<PlaceRecord[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/bookmarks/wanted");
+    const data = await res.json();
+    if (!res.ok || data.status !== "success") {
+      console.error("getWanted failed:", data.detail || data.message);
+      return [];
+    }
+    const rows = (data.rows as any[]) ?? [];
+
+    wantedNames.clear();
+
+    return rows.map((row) => {
+      const createdAt = row.created_at
+        ? new Date(row.created_at)
+        : new Date();
+      const rawDate = createdAt.toISOString().split("T")[0];
+      const [year, month, day] = rawDate.split("-").map((x: string) =>
+        Number(x),
+      );
+      const name = row.name as string;
+      wantedNames.add(name);
+
+      return {
+        id: String(row.id),
+        name,
+        date: `登録日: ${month}月${day}日`,
+        rawDate,
+        category: (row.category as string) ?? "",
+        distance:
+          typeof row.distance_m === "number"
+            ? row.distance_m >= 1000
+              ? `${(row.distance_m / 1000).toFixed(1).toString()}km`
+              : `${Math.round(row.distance_m)}m`
+            : undefined,
+      } satisfies PlaceRecord;
+    });
+  } catch (e) {
+    console.error("getWanted unexpected error:", e);
+    return [];
+  }
 }
 
 /** 発見リストを取得 */
-export function getDiscovered(): PlaceRecord[] {
-  return load(DISCOVERED_KEY);
+export async function getDiscovered(): Promise<PlaceRecord[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/bookmarks/discovered");
+    const data = await res.json();
+    if (!res.ok || data.status !== "success") {
+      console.error("getDiscovered failed:", data.detail || data.message);
+      return [];
+    }
+    const rows = (data.rows as any[]) ?? [];
+
+    return rows.map((row) => {
+      const createdAt = row.discovered_at
+        ? new Date(row.discovered_at)
+        : row.created_at
+          ? new Date(row.created_at)
+          : new Date();
+      const rawDate = createdAt.toISOString().split("T")[0];
+      const [year, month, day] = rawDate.split("-").map((x: string) =>
+        Number(x),
+      );
+
+      return {
+        id: String(row.id),
+        name: row.name as string,
+        date: `発見日: ${month}月${day}日`,
+        rawDate,
+        category: (row.category as string) ?? "スポット",
+        comment: row.comment ?? undefined,
+        imageUrl: row.image_url ?? undefined,
+        lat:
+          typeof row.lat === "number" && Number.isFinite(row.lat)
+            ? row.lat
+            : undefined,
+        lng:
+          typeof row.lng === "number" && Number.isFinite(row.lng)
+            ? row.lng
+            : undefined,
+      } satisfies PlaceRecord;
+    });
+  } catch (e) {
+    console.error("getDiscovered unexpected error:", e);
+    return [];
+  }
 }
 
 /** 指定スポットが「行きたい」に登録済みかチェック */
 export function isWanted(placeName: string): boolean {
-  return load(WANTED_KEY).some((r) => r.name === placeName);
+  return wantedNames.has(placeName);
 }
 
 /** 指定スポットが「行った」に登録済みかチェック */
 export function isVisited(placeName: string): boolean {
-  return load(VISITED_KEY).some((r) => r.name === placeName);
+  return visitedNames.has(placeName);
 }
