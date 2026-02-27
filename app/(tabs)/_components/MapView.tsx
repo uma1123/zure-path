@@ -30,6 +30,28 @@ import ExploreResultOverlay, { type PathPoint } from "./ExploreResultOverlay";
 import BottomNavBar from "./BottomNavBar";
 import { addRoute } from "../../../utils/mockRouteHistory";
 
+/** 2点間の直線距離をメートルで返す（Haversine公式） */
+function getDistanceMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371000; // 地球の半径 (m)
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** GPS精度フィルタの閾値 (メートル) — これ以上の誤差は破棄 */
+const ACCURACY_THRESHOLD = 20;
+/** 静止ブレフィルタの閾値 (メートル) — 前回記録位置からこの距離以上動いた場合のみ記録 */
+const MIN_MOVE_DISTANCE = 5;
+
 export default function MapView() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -67,6 +89,7 @@ export default function MapView() {
   const [showArrivalPopup, setShowArrivalPopup] = useState(false);
   const [showExploreResult, setShowExploreResult] = useState(false);
   const collectedPathPointsRef = useRef<PathPoint[]>([]);
+  const lastRecordedPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const exploreStartTimeRef = useRef<Date | null>(null);
   const [resultPathPoints, setResultPathPoints] = useState<PathPoint[]>([]);
   const [resultStartLocation, setResultStartLocation] = useState<{
@@ -234,6 +257,7 @@ export default function MapView() {
       setRouteGeometry(null);
       // 経路ポイントの蓄積を初期化
       collectedPathPointsRef.current = [];
+      lastRecordedPosRef.current = null;
       exploreStartTimeRef.current = new Date();
     } catch (e) {
       console.error("走行記録の開始中にエラーが発生しました:", e);
@@ -521,9 +545,38 @@ export default function MapView() {
 
     const watchId = navigator.geolocation.watchPosition(
       async (position) => {
+        // --- 精度フィルタ: 誤差が大きいデータは破棄 ---
+        const accuracy = position.coords.accuracy;
+        if (accuracy >= ACCURACY_THRESHOLD) {
+          console.log(
+            `[GPS] 精度不足のため破棄 (accuracy: ${accuracy.toFixed(1)}m)`,
+          );
+          return;
+        }
+
+        const newLat = position.coords.latitude;
+        const newLng = position.coords.longitude;
+
+        // --- 静止ブレフィルタ: 前回記録位置から一定距離以上動いた場合のみ記録 ---
+        const lastPos = lastRecordedPosRef.current;
+        if (lastPos) {
+          const dist = getDistanceMeters(
+            lastPos.lat,
+            lastPos.lng,
+            newLat,
+            newLng,
+          );
+          if (dist < MIN_MOVE_DISTANCE) {
+            return;
+          }
+        }
+
+        // フィルタ通過 → 記録
+        lastRecordedPosRef.current = { lat: newLat, lng: newLng };
+
         const point = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
+          lat: newLat,
+          lng: newLng,
           recordedAt: new Date().toISOString(),
         };
 
@@ -719,6 +772,15 @@ export default function MapView() {
           onDiscover={() => {
             setShowDiscoverPopup(true);
           }}
+          onRecenter={() => {
+            const map = mapRef.current;
+            if (!map || !userLocation) return;
+            map.easeTo({
+              center: [userLocation.lng, userLocation.lat],
+              zoom: 17,
+              duration: 500,
+            });
+          }}
         />
       </div>
 
@@ -819,6 +881,7 @@ export default function MapView() {
             setResultStartLocation(null);
             setResultDestination(null);
             collectedPathPointsRef.current = [];
+            lastRecordedPosRef.current = null;
             exploreStartTimeRef.current = null;
             setRouteGeometry(null);
           }}

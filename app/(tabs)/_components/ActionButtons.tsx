@@ -7,6 +7,7 @@ type Props = {
   onPeekStart: () => void;
   onPeekEnd: () => void;
   onDiscover: () => void;
+  onRecenter: () => void;
 };
 
 export default function ActionButtons({
@@ -14,6 +15,7 @@ export default function ActionButtons({
   onPeekStart,
   onPeekEnd,
   onDiscover,
+  onRecenter,
 }: Props) {
   return (
     <div className="absolute top-12 right-4 flex flex-col gap-3 pointer-events-auto">
@@ -47,6 +49,25 @@ export default function ActionButtons({
           alt="Discover"
           style={{ width: "auto", height: "auto" }}
         />
+      </button>
+      {/* 現在地に戻る */}
+      <button
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-md active:bg-gray-100 backdrop-blur-sm"
+        onClick={onRecenter}
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+        </svg>
       </button>
     </div>
   );
