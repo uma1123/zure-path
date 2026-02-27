@@ -5,6 +5,8 @@ type StartRecordRequestBody = {
   startLat: number;
   startLng: number;
   destName: string;
+  destLat?: number;
+  destLng?: number;
 };
 
 export async function POST(request: Request) {
@@ -47,6 +49,8 @@ export async function POST(request: Request) {
     const startLat = body.startLat;
     const startLng = body.startLng;
     const destName = body.destName.trim();
+    const hasDestCoords =
+      typeof body.destLat === "number" && typeof body.destLng === "number";
 
     // 1. records を作成
     const { data: record, error: recordError } = await supabase
@@ -55,6 +59,9 @@ export async function POST(request: Request) {
         user_id: user.id,
         start_lat: startLat,
         start_lng: startLng,
+        ...(hasDestCoords
+          ? { dest_lat: body.destLat, dest_lng: body.destLng }
+          : {}),
       })
       .select()
       .single();
@@ -77,6 +84,9 @@ export async function POST(request: Request) {
         user_id: user.id,
         record_id: record.id,
         name: destName,
+        ...(hasDestCoords
+          ? { lat: body.destLat as number, lng: body.destLng as number }
+          : {}),
       })
       .select()
       .single();

@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import SearchOverlay from "../../../components/SearchOverlay";
+import SearchOverlay, {
+  type Destination as SearchDestination,
+} from "../../../components/SearchOverlay";
 import { useUserLocation } from "./hooks/useUserLocation";
 import { useFetchPlaces } from "./hooks/useFetchPlaces";
 import {
@@ -53,6 +55,9 @@ export default function MapView() {
     string | null
   >(null);
   const watchIdRef = useRef<number | null>(null);
+  const mainDestinationMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const [mainDestination, setMainDestination] =
+    useState<SearchDestination | null>(null);
 
   // 最寄りのお店（距離ソート済みの先頭）
   const nearest = selectedPlace ?? places[0] ?? null;
@@ -65,8 +70,9 @@ export default function MapView() {
   };
 
   // 目的地選択後の処理（メイン目的地）
-  const handleSelectDestination = async (target: string) => {
+  const handleSelectDestination = async (dest: SearchDestination) => {
     setShowSearch(false);
+    setMainDestination(dest);
 
     if (!userLocation) return;
     try {
@@ -76,7 +82,9 @@ export default function MapView() {
         body: JSON.stringify({
           startLat: userLocation.lat,
           startLng: userLocation.lng,
-          destName: target,
+          destName: dest.name,
+          destLat: dest.lat,
+          destLng: dest.lng,
         }),
       });
 
@@ -183,6 +191,34 @@ export default function MapView() {
       mapRef.current = null;
     };
   }, [userLocation]);
+
+  // メイン目的地用の赤ピンを描画
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // 既存のピンを削除
+    if (mainDestinationMarkerRef.current) {
+      mainDestinationMarkerRef.current.remove();
+      mainDestinationMarkerRef.current = null;
+    }
+
+    if (!mainDestination) return;
+
+    const el = document.createElement("div");
+    el.style.width = "24px";
+    el.style.height = "24px";
+    el.style.borderRadius = "50%";
+    el.style.backgroundColor = "#ef4444";
+    el.style.border = "3px solid white";
+    el.style.boxShadow = "0 0 8px rgba(239,68,68,0.7)";
+
+    const marker = new maplibregl.Marker({ element: el })
+      .setLngLat([mainDestination.lng, mainDestination.lat])
+      .addTo(map);
+
+    mainDestinationMarkerRef.current = marker;
+  }, [mainDestination]);
 
   // お店のマーカーを更新
   useEffect(() => {
@@ -371,7 +407,13 @@ export default function MapView() {
 
   // 経路取得（初回の地図表示時に実行）
   useEffect(() => {
-    if (!isPeeking || !userLocation || !nearest || routeGeometry || isRouteLoading)
+    if (
+      !isPeeking ||
+      !userLocation ||
+      !mainDestination ||
+      routeGeometry ||
+      isRouteLoading
+    )
       return;
 
     const fetchRoute = async () => {
@@ -384,8 +426,8 @@ export default function MapView() {
           body: JSON.stringify({
             startLat: userLocation.lat,
             startLng: userLocation.lng,
-            destLat: nearest.lat,
-            destLng: nearest.lng,
+            destLat: mainDestination.lat,
+            destLng: mainDestination.lng,
           }),
         });
 
@@ -409,7 +451,7 @@ export default function MapView() {
     };
 
     fetchRoute();
-  }, [isPeeking, userLocation, nearest, routeGeometry, isRouteLoading]);
+  }, [isPeeking, userLocation, mainDestination, routeGeometry, isRouteLoading]);
 
   // 経路ラインをマップに描画
   useEffect(() => {
