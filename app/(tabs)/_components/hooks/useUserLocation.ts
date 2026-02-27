@@ -40,7 +40,7 @@ export function useUserLocation() {
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 0,
+        maximumAge: 60000, // 1分以内のキャッシュを利用して高速化
       },
     );
   }, []);
