@@ -9,9 +9,19 @@ type Props = {
   show: boolean;
   nearest: Place;
   onClose: () => void;
+  onSaveVisit?: (options: {
+    rating?: number;
+    memo?: string;
+    photoUrl?: string;
+  }) => Promise<void> | void;
 };
 
-export default function VisitedPopup({ show, nearest, onClose }: Props) {
+export default function VisitedPopup({
+  show,
+  nearest,
+  onClose,
+  onSaveVisit,
+}: Props) {
   const [discoverRating, setDiscoverRating] = useState(0);
   const [discoverMemo, setDiscoverMemo] = useState("");
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -162,13 +172,26 @@ export default function VisitedPopup({ show, nearest, onClose }: Props) {
 
           {/* 行ったボタン */}
           <button
-            onClick={() => {
+            onClick={async () => {
+              // ローカルブックマークに保存
               saveVisited(
                 nearest,
                 discoverRating || undefined,
                 discoverMemo || undefined,
                 photoPreview ?? undefined,
               );
+
+              // サーバー側の走行履歴更新（任意）
+              try {
+                await onSaveVisit?.({
+                  rating: discoverRating || undefined,
+                  memo: discoverMemo || undefined,
+                  photoUrl: photoPreview ?? undefined,
+                });
+              } catch (e) {
+                console.error("[VisitedPopup] onSaveVisit error", e);
+              }
+
               setDiscoverRating(0);
               setDiscoverMemo("");
               setPhotoPreview(null);

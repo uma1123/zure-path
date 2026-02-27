@@ -42,6 +42,20 @@ export default function MapView() {
   const [showVisitedPopup, setShowVisitedPopup] = useState(false);
   const [visitedTarget, setVisitedTarget] = useState<Place | null>(null);
   const [showDiscoverPopup, setShowDiscoverPopup] = useState(false);
+  const [routeGeometry, setRouteGeometry] = useState<{
+    type: "LineString";
+    coordinates: [number, number][];
+  } | null>(null);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [currentRecordId, setCurrentRecordId] = useState<string | null>(null);
+  const [currentTargetPlaceId, setCurrentTargetPlaceId] = useState<
+    string | null
+  >(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  // 最寄りのお店（距離ソート済みの先頭）
+  const nearest = selectedPlace ?? places[0] ?? null;
   // マーカー再描画トリガー（行きたい/行った/発見保存後にインクリメント）
   const [markerVersion, setMarkerVersion] = useState(0);
 
@@ -50,10 +64,39 @@ export default function MapView() {
     setShowSearch(true);
   };
 
-  // 目的地選択後の処理
-  const handleSelectDestination = (target: string) => {
+  // 目的地選択後の処理（メイン目的地）
+  const handleSelectDestination = async (target: string) => {
     setShowSearch(false);
-    console.log("選択された目的地:", target);
+
+    if (!userLocation) return;
+    try {
+      const res = await fetch("/api/records/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startLat: userLocation.lat,
+          startLng: userLocation.lng,
+          destName: target,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.status !== "success") {
+        console.error(
+          "走行記録の開始に失敗しました:",
+          data.detail || data.message,
+        );
+        return;
+      }
+
+      setCurrentRecordId(data.recordId ?? null);
+      setCurrentTargetPlaceId(data.targetPlaceId ?? null);
+      // 新しいルート開始時は既存のルート表示をクリア
+      setRouteGeometry(null);
+    } catch (e) {
+      console.error("走行記録の開始中にエラーが発生しました:", e);
+    }
   };
 
   // 地図を初期化
@@ -254,14 +297,162 @@ export default function MapView() {
   // マップの表示切替
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.getLayer("osm-layer")) return;
+    if (!map) return;
 
-    // isPeeking=trueなら地図を出す、falseなら背景だけ表示して地図はフェードアウト
-    map.setPaintProperty("osm-layer", "raster-opacity-transition", {
-      duration: 300,
-    });
-    map.setPaintProperty("osm-layer", "raster-opacity", isPeeking ? 1 : 0);
+    if (map.getLayer("osm-layer")) {
+      // isPeeking=trueなら地図を出す、falseなら背景だけ表示して地図はフェードアウト
+      map.setPaintProperty("osm-layer", "raster-opacity-transition", {
+        duration: 300,
+      });
+      map.setPaintProperty("osm-layer", "raster-opacity", isPeeking ? 1 : 0);
+    }
+
+    if (map.getLayer("route-line")) {
+      map.setPaintProperty("route-line", "line-opacity-transition", {
+        duration: 300,
+      });
+      map.setPaintProperty("route-line", "line-opacity", isPeeking ? 1 : 0);
+    }
   }, [isPeeking]);
+
+  // 位置情報を継続的に取得して path_points に送信
+  useEffect(() => {
+    if (!currentRecordId) {
+      // 記録対象がなくなったらウォッチを解除
+      if (watchIdRef.current != null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      return;
+    }
+
+    if (!navigator.geolocation || watchIdRef.current != null) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      async (position) => {
+        const point = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          recordedAt: new Date().toISOString(),
+        };
+
+        try {
+          await fetch("/api/path-points", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              recordId: currentRecordId,
+              points: [point],
+            }),
+          });
+        } catch (e) {
+          console.error("経路ポイント送信中にエラーが発生しました:", e);
+        }
+      },
+      (err) => {
+        console.error("位置情報ウォッチ中にエラーが発生しました:", err);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000,
+      },
+    );
+
+    watchIdRef.current = watchId;
+
+    return () => {
+      if (watchIdRef.current != null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [currentRecordId]);
+
+  // 経路取得（初回の地図表示時に実行）
+  useEffect(() => {
+    if (!isPeeking || !userLocation || !nearest || routeGeometry || isRouteLoading)
+      return;
+
+    const fetchRoute = async () => {
+      setIsRouteLoading(true);
+      setRouteError(null);
+      try {
+        const res = await fetch("/api/routes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startLat: userLocation.lat,
+            startLng: userLocation.lng,
+            destLat: nearest.lat,
+            destLng: nearest.lng,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || data.status !== "success" || !data.route?.geometry) {
+          throw new Error(
+            data.detail || data.message || "経路の取得に失敗しました",
+          );
+        }
+
+        setRouteGeometry(data.route.geometry);
+      } catch (e: any) {
+        console.error("経路取得エラー:", e);
+        setRouteError(
+          e?.message ?? "経路の取得中にエラーが発生しました",
+        );
+      } finally {
+        setIsRouteLoading(false);
+      }
+    };
+
+    fetchRoute();
+  }, [isPeeking, userLocation, nearest, routeGeometry, isRouteLoading]);
+
+  // 経路ラインをマップに描画
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !routeGeometry) return;
+
+    const sourceId = "route";
+    const layerId = "route-line";
+
+    const feature = {
+      type: "Feature",
+      geometry: routeGeometry,
+      properties: {},
+    };
+
+    const existingSource = map.getSource(sourceId) as
+      | maplibregl.GeoJSONSource
+      | undefined;
+
+    if (existingSource) {
+      existingSource.setData(feature as any);
+    } else {
+      map.addSource(sourceId, {
+        type: "geojson",
+        data: feature as any,
+      });
+
+      map.addLayer({
+        id: layerId,
+        type: "line",
+        source: sourceId,
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#2563eb",
+          "line-width": 5,
+          "line-opacity": isPeeking ? 1 : 0,
+        },
+      });
+    }
+  }, [routeGeometry, isPeeking]);
 
   // 現在地取得中
   if (!userLocation && !error) {
@@ -295,9 +486,6 @@ export default function MapView() {
       </div>
     );
   }
-
-  // 最寄りのお店（距離ソート済みの先頭）
-  const nearest = selectedPlace ?? places[0] ?? null;
 
   return (
     <div className="relative h-dvh w-full overflow-hidden">
@@ -333,9 +521,11 @@ export default function MapView() {
       </div>
 
       {/* APIエラーバナー（マップ表示中） */}
-      {error && userLocation && (
+      {(error || routeError) && userLocation && (
         <div className="absolute top-36 left-1/2 z-10 w-72 -translate-x-1/2 rounded-xl bg-red-50 px-4 py-2 shadow-md">
-          <p className="text-center text-xs text-red-500">{error}</p>
+          <p className="text-center text-xs text-red-500">
+            {routeError || error}
+          </p>
         </div>
       )}
 
@@ -358,6 +548,30 @@ export default function MapView() {
         <VisitedPopup
           show={showVisitedPopup}
           nearest={visitedTarget}
+          onSaveVisit={async () => {
+            if (!currentRecordId) return;
+            try {
+              const res = await fetch("/api/visits", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  recordId: currentRecordId,
+                  targetPlaceId: currentTargetPlaceId ?? undefined,
+                }),
+              });
+
+              const data = await res.json();
+
+              if (!res.ok || data.status !== "success") {
+                console.error(
+                  "訪問記録の保存に失敗しました:",
+                  data.detail || data.message,
+                );
+              }
+            } catch (e) {
+              console.error("訪問記録の保存中にエラーが発生しました:", e);
+            }
+          }}
           onClose={() => {
             setShowVisitedPopup(false);
             setVisitedTarget(null);
