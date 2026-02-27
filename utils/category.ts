@@ -271,3 +271,141 @@ const DEFAULT_DISPLAY: CategoryDisplay = {
 export const getCategoryDisplay = (osmTag: string): CategoryDisplay => {
   return OSM_TAG_TO_DISPLAY[osmTag] || DEFAULT_DISPLAY;
 };
+
+// ==========================================
+// 4. OSMタグからピンアイコンカテゴリを判定するマッピング
+// ==========================================
+
+/** ピンアイコンのカテゴリ種別 */
+export type PinCategory = "inshoku" | "shop" | "park" | "kankou" | "entame";
+
+/** ピンの状態: 1=デフォルト, 2=行きたい, 3=行った, 4=発見 */
+export type PinState = 1 | 2 | 3 | 4;
+
+// CATEGORY_TO_OSM_TAGS のジャンル分けに基づく逆引きマップ
+const OSM_TAG_TO_PIN_CATEGORY: Record<string, PinCategory> = {};
+
+// --- 飲食店 ---
+const INSHOKU_CATEGORIES = [
+  "レストラン",
+  "カフェ",
+  "居酒屋・バー",
+  "ラーメン・麺類",
+  "ファーストフード",
+  "パン屋",
+  "スイーツ・菓子",
+];
+// --- ショッピング ---
+const SHOP_CATEGORIES = [
+  "本屋",
+  "雑貨・ギフト",
+  "花屋",
+  "市場・マルシェ",
+  "百貨店・モール",
+  "文房具",
+];
+// --- 公園・自然 ---
+const PARK_CATEGORIES = [
+  "公園",
+  "広場",
+  "湧き水・泉",
+  "巨木・シンボルツリー",
+  "水辺・海岸",
+  "山頂・丘",
+];
+// --- 観光・絶景 ---
+const KANKOU_CATEGORIES = [
+  "展望台・ビュースポット",
+  "灯台",
+  "記念碑・モニュメント",
+  "神社・寺・史跡",
+  "城・城跡",
+  "噴水",
+  "美術館・博物館",
+  "動物園・水族館",
+];
+// --- エンタメ・その他 ---
+const ENTAME_CATEGORIES = [
+  "映画館",
+  "劇場",
+  "遊園地・テーマパーク",
+  "図書館",
+  "公衆浴場・銭湯",
+];
+
+// カテゴリリストからOSMタグ→ピンカテゴリの逆引きマップを構築
+function buildPinCategoryMap(
+  categories: string[],
+  pinCategory: PinCategory,
+): void {
+  categories.forEach((cat) => {
+    const tags = CATEGORY_TO_OSM_TAGS[cat];
+    if (tags) {
+      tags.forEach((tag) => {
+        OSM_TAG_TO_PIN_CATEGORY[tag] = pinCategory;
+      });
+    }
+  });
+}
+
+buildPinCategoryMap(INSHOKU_CATEGORIES, "inshoku");
+buildPinCategoryMap(SHOP_CATEGORIES, "shop");
+buildPinCategoryMap(PARK_CATEGORIES, "park");
+buildPinCategoryMap(KANKOU_CATEGORIES, "kankou");
+buildPinCategoryMap(ENTAME_CATEGORIES, "entame");
+
+// 日本語カテゴリ名 → ピンカテゴリの逆引きマップ
+const CATEGORY_NAME_TO_PIN: Record<string, PinCategory> = {};
+
+function buildCategoryNameMap(
+  categories: string[],
+  pinCategory: PinCategory,
+): void {
+  categories.forEach((cat) => {
+    CATEGORY_NAME_TO_PIN[cat] = pinCategory;
+  });
+}
+
+buildCategoryNameMap(INSHOKU_CATEGORIES, "inshoku");
+buildCategoryNameMap(SHOP_CATEGORIES, "shop");
+buildCategoryNameMap(PARK_CATEGORIES, "park");
+buildCategoryNameMap(KANKOU_CATEGORIES, "kankou");
+buildCategoryNameMap(ENTAME_CATEGORIES, "entame");
+
+/**
+ * OSMタグ（例: "amenity=cafe"）からピンアイコンのカテゴリを取得する
+ */
+export const getPinCategory = (osmTag: string): PinCategory => {
+  return OSM_TAG_TO_PIN_CATEGORY[osmTag] || "kankou";
+};
+
+/**
+ * OSMタグとピン状態からアイコンパスを取得する
+ * @param osmTag - OSMタグ（例: "amenity=cafe"）
+ * @param state - 1=デフォルト, 2=行きたい, 3=行った, 4=発見
+ * @returns アイコンパス（例: "/icon/inshoku_1.svg"）
+ */
+export const getPinIconPath = (osmTag: string, state: PinState = 1): string => {
+  const category = getPinCategory(osmTag);
+  return `/icon/${category}_${state}.svg`;
+};
+
+/**
+ * 日本語カテゴリ名（例: "カフェ"）からピンカテゴリを取得する
+ * DiscoverPopupで選択されたジャンル名からピンアイコンを決定するために使用
+ */
+export const getCategoryNamePinCategory = (
+  categoryName: string,
+): PinCategory => {
+  return CATEGORY_NAME_TO_PIN[categoryName] || "kankou";
+};
+
+/**
+ * 日本語カテゴリ名から発見ピン（_4）のアイコンパスを取得する
+ * @param categoryName - 日本語カテゴリ名（例: "カフェ"）
+ * @returns アイコンパス（例: "/icon/inshoku_4.svg"）
+ */
+export const getDiscoverPinIconPath = (categoryName: string): string => {
+  const pinCategory = getCategoryNamePinCategory(categoryName);
+  return `/icon/${pinCategory}_4.svg`;
+};
