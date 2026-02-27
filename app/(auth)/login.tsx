@@ -1,235 +1,181 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { useState } from "react";
-import {
-  signInWithEmailPassword,
-  signUpWithEmailPassword,
-  signInWithGoogle,
-} from "@/utils/supabase/auth-client";
+import { signInWithGoogle } from "@/utils/supabase/auth-client";
 
-export type AuthMode = "signin" | "signup";
+/** ピンアイコンの配置データ */
+const PIN_ICONS = [
+  {
+    src: "/icon/kankou_4.svg",
+    alt: "観光",
+    top: "8%",
+    left: "5%",
+    starTop: "6%",
+    starLeft: "20%",
+    size: 72,
+  },
+  {
+    src: "/icon/inshoku_4.svg",
+    alt: "飲食",
+    top: "5%",
+    right: "10%",
+    starTop: "3%",
+    starRight: "8%",
+    size: 64,
+  },
+  {
+    src: "/icon/noodle_4.svg",
+    alt: "麺類",
+    top: "35%",
+    left: "2%",
+    starTop: "33%",
+    starLeft: "18%",
+    size: 60,
+  },
+  {
+    src: "/icon/shop_4.svg",
+    alt: "ショップ",
+    top: "30%",
+    right: "3%",
+    starTop: "28%",
+    starRight: "5%",
+    size: 64,
+  },
+  {
+    src: "/icon/park_4.svg",
+    alt: "公園",
+    bottom: "12%",
+    left: "8%",
+    starBottom: "18%",
+    starLeft: "22%",
+    size: 60,
+  },
+  {
+    src: "/icon/entame_4.svg",
+    alt: "エンタメ",
+    bottom: "8%",
+    right: "5%",
+    starBottom: "14%",
+    starRight: "18%",
+    size: 68,
+  },
+] as const;
 
-type LoginProps = {
-  mode?: AuthMode;
-};
-
-export function Login({ mode = "signin" }: LoginProps) {
-  const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect");
-  const router = useRouter();
-  const [pending, setPending] = useState(false);
+export function Login() {
   const [error, setError] = useState("");
 
-  const query = redirect ? `?redirect=${encodeURIComponent(redirect)}` : "";
-  const signInHref = `/sign-in${query}`;
-  const signUpHref = `/sign-up${query}`;
-
   return (
-    <div className="min-h-[100dvh] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-muted">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-2xl font-bold text-foreground">
-          {mode === "signin"
-            ? "アカウントにログイン"
-            : "アカウントを作成"}
-        </h2>
+    <div className="relative min-h-[100dvh] flex flex-col items-center justify-center overflow-hidden bg-[#e8f5e9] px-6">
+      {/* 装飾ピンアイコン */}
+      {PIN_ICONS.map((pin) => {
+        const posStyle: React.CSSProperties = {};
+        if ("top" in pin && pin.top) posStyle.top = pin.top;
+        if ("bottom" in pin && pin.bottom) posStyle.bottom = pin.bottom;
+        if ("left" in pin && pin.left) posStyle.left = pin.left;
+        if ("right" in pin && pin.right) posStyle.right = pin.right;
+
+        const starStyle: React.CSSProperties = { position: "absolute" };
+        if ("starTop" in pin && pin.starTop) starStyle.top = pin.starTop;
+        if ("starBottom" in pin && pin.starBottom)
+          starStyle.bottom = pin.starBottom;
+        if ("starLeft" in pin && pin.starLeft) starStyle.left = pin.starLeft;
+        if ("starRight" in pin && pin.starRight)
+          starStyle.right = pin.starRight;
+
+        return (
+          <div key={pin.src}>
+            {/* ピンアイコン */}
+            <div className="absolute" style={posStyle}>
+              <Image
+                src={pin.src}
+                alt={pin.alt}
+                width={pin.size}
+                height={pin.size}
+                className="pointer-events-none select-none"
+                priority
+              />
+            </div>
+            {/* 星の装飾 */}
+            <span
+              className="absolute text-amber-400 text-xs pointer-events-none select-none"
+              style={starStyle}
+            >
+              ✦
+            </span>
+          </div>
+        );
+      })}
+
+      {/* 中央コンテンツ */}
+      <div className="relative z-10 flex flex-col items-center gap-2">
+        <h1 className="text-4xl font-bold text-foreground tracking-tight">
+          MapBook
+        </h1>
+        <p className="text-base text-muted-foreground">
+          地図で楽しく本を探そう
+        </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <form
-          className="space-y-6"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setPending(true);
-            setError("");
-
-            const formData = new FormData(e.currentTarget);
-            const email = String(formData.get("email") ?? "").trim();
-            const password = String(formData.get("password") ?? "");
-            const passwordConfirm = String(
-              formData.get("passwordConfirm") ?? "",
-            );
-
-            if (!email || !password) {
-              setError("メールアドレスとパスワードを入力してください");
-              setPending(false);
-              return;
-            }
-
-            if (mode === "signup" && password !== passwordConfirm) {
-              setError("パスワードが一致しません");
-              setPending(false);
-              return;
-            }
-
+      {/* ログインボタン */}
+      <div className="relative z-10 mt-12 w-full max-w-xs">
+        <button
+          type="button"
+          onClick={async () => {
             try {
-              if (mode === "signin") {
-                const { error: signInError } =
-                  await signInWithEmailPassword(email, password);
-
-                if (signInError) {
-                  throw signInError;
-                }
-              } else {
-                const { error: signUpError } =
-                  await signUpWithEmailPassword(email, password);
-
-                if (signUpError) {
-                  throw signUpError;
-                }
-              }
-
-              // 認証成功時は redirect クエリがあればそちらへ、なければトップへ
-              router.push(redirect || "/");
-              router.refresh();
+              setError("");
+              await signInWithGoogle();
             } catch (err) {
-              const message =
-                err instanceof Error
-                  ? err.message
-                  : mode === "signin"
-                    ? "サインインに失敗しました"
-                    : "サインアップに失敗しました";
-              setError(message);
-            } finally {
-              setPending(false);
+              console.error("[login] google auth error", err);
+              setError("Google ログインに失敗しました");
             }
           }}
+          className="w-full flex items-center justify-center gap-3 rounded-full bg-white py-3.5 px-6 text-base font-medium text-foreground shadow-sm border border-gray-200 active:bg-gray-50"
         >
-          <input type="hidden" name="redirect" value={redirect ?? ""} />
+          {/* Google "G" アイコン */}
+          <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+            <path
+              fill="#EA4335"
+              d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+            />
+            <path
+              fill="#4285F4"
+              d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.08 24.08 0 0 0 0 21.56l7.98-6.19z"
+            />
+            <path
+              fill="#34A853"
+              d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+            />
+          </svg>
+          Googleでログイン
+        </button>
 
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-foreground"
-            >
-              メールアドレス
-            </label>
-            <div className="mt-1">
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                maxLength={50}
-                className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm"
-                placeholder="メールアドレスを入力"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-foreground"
-            >
-              パスワード
-            </label>
-            <div className="mt-1">
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete={
-                  mode === "signin" ? "current-password" : "new-password"
-                }
-                required
-                minLength={8}
-                maxLength={100}
-                className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm"
-                placeholder="パスワードを入力"
-              />
-            </div>
-          </div>
-
-          {mode === "signup" && (
-            <div>
-              <label
-                htmlFor="passwordConfirm"
-                className="block text-sm font-medium text-foreground"
-              >
-                パスワード（確認）
-              </label>
-              <div className="mt-1">
-                <input
-                  id="passwordConfirm"
-                  name="passwordConfirm"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  minLength={8}
-                  maxLength={100}
-                  className="block w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm"
-                  placeholder="パスワードを再入力"
-                />
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="text-sm text-destructive" role="alert">
-              {error}
-            </div>
-          )}
-
-          <div>
-            <button
-              type="submit"
-              disabled={pending}
-              className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-lg text-sm font-medium text-primary-foreground bg-primary hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
-            >
-              {pending
-                ? "処理中..."
-                : mode === "signin"
-                  ? "ログイン"
-                  : "アカウント作成"}
-            </button>
-          </div>
-        </form>
-
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                await signInWithGoogle();
-              } catch (err) {
-                console.error("[login] google auth error", err);
-                setError("Google ログインに失敗しました");
-              }
-            }}
-            className="w-full flex justify-center items-center py-2 px-4 border border-border rounded-lg text-sm font-medium bg-white text-foreground hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+        {error && (
+          <div
+            className="mt-3 text-center text-sm text-destructive"
+            role="alert"
           >
-            Google でログイン
-          </button>
-        </div>
-
-        <div className="mt-6">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="bg-muted px-2 text-muted-foreground">
-                {mode === "signin"
-                  ? "アカウントをお持ちでない方"
-                  : "すでにアカウントがある方"}
-              </span>
-            </div>
+            {error}
           </div>
+        )}
+      </div>
 
-          <div className="mt-6">
-            <Link
-              href={mode === "signin" ? signUpHref : signInHref}
-              className="w-full flex justify-center py-2 px-4 border border-border rounded-lg text-sm font-medium text-foreground bg-background hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-            >
-              {mode === "signin"
-                ? "サインアップ"
-                : "ログイン"}
-            </Link>
-          </div>
-        </div>
+      {/* 利用規約・プライバシーポリシー */}
+      <div className="relative z-10 mt-8 w-full max-w-xs text-center text-sm text-muted-foreground leading-relaxed">
+        ログインすることで
+        <a href="#" className="text-primary underline underline-offset-2">
+          利用規約
+        </a>
+        と
+        <br />
+        <a href="#" className="text-primary underline underline-offset-2">
+          プライバシーポリシー
+        </a>
+        に同意したものとみなされます
       </div>
     </div>
   );
