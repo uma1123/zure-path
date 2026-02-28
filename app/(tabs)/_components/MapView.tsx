@@ -130,20 +130,20 @@ export default function MapView() {
   const liveDistanceM = (() => {
     if (!livePos) return null;
     if (mainDestination) {
-      return haversineDistance(
-        livePos.lat,
-        livePos.lng,
-        mainDestination.lat,
-        mainDestination.lng,
-      ) * 1000; // km → m
+      return (
+        haversineDistance(
+          livePos.lat,
+          livePos.lng,
+          mainDestination.lat,
+          mainDestination.lng,
+        ) * 1000
+      ); // km → m
     }
     if (nearest) {
-      return haversineDistance(
-        livePos.lat,
-        livePos.lng,
-        nearest.lat,
-        nearest.lng,
-      ) * 1000;
+      return (
+        haversineDistance(livePos.lat, livePos.lng, nearest.lat, nearest.lng) *
+        1000
+      );
     }
     return null;
   })();
@@ -205,10 +205,15 @@ export default function MapView() {
     const recordId = currentRecordId ?? currentRecordIdRef.current;
     if (recordId) {
       try {
-        const res = await fetch(`/api/records/${recordId}/complete`, { method: "PATCH" });
+        const res = await fetch(`/api/records/${recordId}/complete`, {
+          method: "PATCH",
+        });
         const data = await res.json();
         if (!res.ok) {
-          console.error("[handleArrival] complete failed", data?.detail ?? data?.message ?? res.status);
+          console.error(
+            "[handleArrival] complete failed",
+            data?.detail ?? data?.message ?? res.status,
+          );
         }
       } catch (e) {
         console.error("[handleArrival] complete request error", e);
@@ -769,7 +774,7 @@ export default function MapView() {
           console.error("経路ポイント送信中にエラーが発生しました:", e);
         }
       },
-      (err) => {  
+      (err) => {
         console.error("位置情報ウォッチ中にエラーが発生しました:", err);
       },
       {
