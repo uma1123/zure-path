@@ -332,7 +332,7 @@ export default function MapView() {
     return () => {
       markers.forEach((m) => m.remove());
     };
-  }, [markerVersion]);
+  }, [markerVersion, userLocation]);
 
   // マップの表示切替
   useEffect(() => {
