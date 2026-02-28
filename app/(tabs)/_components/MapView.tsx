@@ -3,6 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import turfCircle from "@turf/circle";
+import turfUnion from "@turf/union";
+import {
+  polygon as turfPolygon,
+  featureCollection as turfFc,
+} from "@turf/helpers";
+import type { Feature, Polygon, MultiPolygon } from "geojson";
 import SearchOverlay, {
   type Destination as SearchDestination,
 } from "../../../components/SearchOverlay";
@@ -61,6 +68,11 @@ export default function MapView() {
   >(null);
   const watchIdRef = useRef<number | null>(null);
   const mainDestinationMarkerRef = useRef<maplibregl.Marker | null>(null);
+  // 常時位置トラッキング & 霧マスク用
+  const userMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const pathWatchIdRef = useRef<number | null>(null);
+  const walkedPathRef = useRef<[number, number][]>([]);
+  const fogUnionRef = useRef<Feature<Polygon | MultiPolygon> | null>(null);
   const [mainDestination, setMainDestination] =
     useState<SearchDestination | null>(null);
   // 到着ポップアップ・結果画面用
@@ -268,33 +280,25 @@ export default function MapView() {
             },
           },
 
-          // 救済で地図を表示する
+          // OSMタイルレイヤー（常時表示、霧マスクで覆う）
           {
             id: "osm-layer",
             type: "raster",
             source: "osm",
             layout: {
-              visibility: "none", // 初期状態ではタイル読み込み自体を停止
+              visibility: "visible",
             },
             paint: {
               "raster-opacity": 1,
-              "raster-saturation": -0.5, // 彩度を下げる
+              "raster-saturation": -0.5,
             },
           },
         ],
       },
       center: [userLocation.lng, userLocation.lat],
       zoom: 17,
-      pitch: 80,
+      pitch: 0,
       attributionControl: false,
-    });
-
-    // 現在地を画面下部（ナビバー真上）に表示するため、上部に大きなパディングを設定
-    map.setPadding({
-      top: Math.round(window.innerHeight * 0.55),
-      bottom: 0,
-      left: 0,
-      right: 0,
     });
 
     // タイル読み込みエラーをログ
@@ -307,7 +311,44 @@ export default function MapView() {
       setSelectedPlace(null);
     });
 
-    // 現在地マーカー（me2.svg アイコン）
+    // 霧マスク用のソースとレイヤーを追加（世界ポリゴンで地図を覆い、歩行経路を穴として切り抜く）
+    map.on("load", () => {
+      // 初期位置に小さな穴を開ける
+      const initCircle = turfCircle(
+        [userLocation.lng, userLocation.lat],
+        0.03,
+        { steps: 32, units: "kilometers" },
+      );
+      fogUnionRef.current = initCircle as Feature<Polygon>;
+      walkedPathRef.current = [[userLocation.lng, userLocation.lat]];
+
+      const worldOuter: [number, number][] = [
+        [-180, -90],
+        [180, -90],
+        [180, 90],
+        [-180, 90],
+        [-180, -90],
+      ];
+      const hole = initCircle.geometry.coordinates[0] as [number, number][];
+      const fogPoly = turfPolygon([worldOuter, hole]);
+
+      map.addSource("fog-mask", {
+        type: "geojson",
+        data: fogPoly as any,
+      });
+
+      map.addLayer({
+        id: "fog-mask-layer",
+        type: "fill",
+        source: "fog-mask",
+        paint: {
+          "fill-color": "#4ade80",
+          "fill-opacity": 1,
+        },
+      });
+    });
+
+    // 現在地マーカー（me2.webp アイコン）
     const userEl = document.createElement("div");
     userEl.style.width = "100px";
     userEl.style.height = "100px";
@@ -316,15 +357,112 @@ export default function MapView() {
     userEl.style.backgroundRepeat = "no-repeat";
     userEl.style.backgroundPosition = "center";
 
-    new maplibregl.Marker({ element: userEl, anchor: "center" })
+    const userMarker = new maplibregl.Marker({
+      element: userEl,
+      anchor: "center",
+    })
       .setLngLat([userLocation.lng, userLocation.lat])
       .addTo(map);
+    userMarkerRef.current = userMarker;
 
     mapRef.current = map;
 
     return () => {
       map.remove();
       mapRef.current = null;
+      userMarkerRef.current = null;
+    };
+  }, [userLocation]);
+
+  // 常時位置トラッキング: 現在地マーカー追従 + 霧マスク更新
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !navigator.geolocation) return;
+    if (pathWatchIdRef.current != null) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const lng = position.coords.longitude;
+        const lat = position.coords.latitude;
+
+        // 現在地マーカーを移動
+        userMarkerRef.current?.setLngLat([lng, lat]);
+
+        // マップ中央を追従
+        map.easeTo({
+          center: [lng, lat],
+          duration: 300,
+        });
+
+        // 歩行経路に追加
+        walkedPathRef.current.push([lng, lat]);
+
+        // 霧マスクを更新（新しい位置に穴を追加）
+        const newCircle = turfCircle([lng, lat], 0.03, {
+          steps: 32,
+          units: "kilometers",
+        });
+
+        try {
+          if (fogUnionRef.current) {
+            const fc = turfFc([
+              fogUnionRef.current as Feature<Polygon | MultiPolygon>,
+              newCircle as Feature<Polygon>,
+            ]);
+            const merged = turfUnion(fc);
+            if (merged) {
+              fogUnionRef.current = merged;
+            }
+          } else {
+            fogUnionRef.current = newCircle as Feature<Polygon>;
+          }
+
+          // 霧マスクジオメトリを更新
+          const src = map.getSource("fog-mask") as
+            | maplibregl.GeoJSONSource
+            | undefined;
+          if (src && fogUnionRef.current) {
+            const worldOuter: [number, number][] = [
+              [-180, -90],
+              [180, -90],
+              [180, 90],
+              [-180, 90],
+              [-180, -90],
+            ];
+            const geom = fogUnionRef.current.geometry;
+            let holes: [number, number][][];
+            if (geom.type === "Polygon") {
+              holes = [geom.coordinates[0] as [number, number][]];
+            } else {
+              // MultiPolygon: 各ポリゴンの外側リングを穴として使用
+              holes = geom.coordinates.map(
+                (poly) => poly[0] as [number, number][],
+              );
+            }
+            const fogPoly = turfPolygon([worldOuter, ...holes]);
+            src.setData(fogPoly as any);
+          }
+        } catch (e) {
+          console.error("霧マスク更新エラー:", e);
+        }
+      },
+      (err) => {
+        console.error("常時位置トラッキングエラー:", err);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 10000,
+      },
+    );
+
+    pathWatchIdRef.current = watchId;
+
+    return () => {
+      if (pathWatchIdRef.current != null) {
+        navigator.geolocation.clearWatch(pathWatchIdRef.current);
+        pathWatchIdRef.current = null;
+      }
     };
   }, [userLocation]);
 
@@ -495,17 +633,17 @@ export default function MapView() {
     });
   }, [heading]);
 
-  // マップの表示切替
+  // マップの表示切替（Peek中は霧マスクを非表示にして全地図表示）
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (map.getLayer("osm-layer")) {
-      // isPeeking=trueならタイル読み込みを開始して地図を表示、falseなら停止
+    // 霧マスク: Peek中は非表示、通常時は表示
+    if (map.getLayer("fog-mask-layer")) {
       map.setLayoutProperty(
-        "osm-layer",
+        "fog-mask-layer",
         "visibility",
-        isPeeking ? "visible" : "none",
+        isPeeking ? "none" : "visible",
       );
     }
 
