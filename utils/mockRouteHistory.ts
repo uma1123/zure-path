@@ -323,17 +323,50 @@ const MOCK_ROUTES: RouteRecord[] = [
   },
 ];
 
+// ========================================
+// localStorage 永続化（実データ保存用）
+// ========================================
+const SAVED_ROUTES_KEY = "zeropath_saved_routes";
+
+function loadSavedRoutes(): RouteRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(
+      localStorage.getItem(SAVED_ROUTES_KEY) || "[]",
+    ) as RouteRecord[];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedRoutes(routes: RouteRecord[]): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
+}
+
+/** 新しい経路を保存（localStorageに永続化） */
+export function addRoute(route: RouteRecord): void {
+  const saved = loadSavedRoutes();
+  saved.unshift(route);
+  persistSavedRoutes(saved);
+}
+
+/** モック + 保存済みを統合して全経路を取得 */
+function getAllCombinedRoutes(): RouteRecord[] {
+  return [...loadSavedRoutes(), ...MOCK_ROUTES];
+}
+
 /** 指定日付の経路一覧を取得 */
 export function getRoutesByDate(date: string): RouteRecord[] {
-  return MOCK_ROUTES.filter((r) => r.date === date);
+  return getAllCombinedRoutes().filter((r) => r.date === date);
 }
 
 /** 経路が存在する日付一覧を取得 (重複なし) */
 export function getDatesWithRoutes(): string[] {
-  return [...new Set(MOCK_ROUTES.map((r) => r.date))];
+  return [...new Set(getAllCombinedRoutes().map((r) => r.date))];
 }
 
 /** 全経路を取得 */
 export function getAllRoutes(): RouteRecord[] {
-  return MOCK_ROUTES;
+  return getAllCombinedRoutes();
 }
