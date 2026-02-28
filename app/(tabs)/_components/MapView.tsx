@@ -574,30 +574,7 @@ export default function MapView() {
 
     let markers: maplibregl.Marker[] = [];
     const addDiscoverMarkers = () => {
-      const markers: maplibregl.Marker[] = [];
-      const discovered = getDiscovered();
-
-      discovered.forEach((record) => {
-        if (record.lat == null || record.lng == null) return;
-
-        const iconPath = getDiscoverPinIconPath(record.category);
-
-        const el = document.createElement("div");
-        el.style.width = "60px";
-        el.style.height = "60px";
-        el.style.backgroundImage = `url("${iconPath}")`;
-        el.style.backgroundSize = "contain";
-        el.style.backgroundRepeat = "no-repeat";
-        el.style.backgroundPosition = "center";
-        el.style.cursor = "pointer";
-
-        const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
-          .setLngLat([record.lng, record.lat])
-          .addTo(map);
-
-    const addDiscoverMarkers = () => {
       void getDiscovered().then((discovered) => {
-        // 既存マーカーをクリア
         markers.forEach((m) => m.remove());
         markers = [];
 
@@ -628,17 +605,11 @@ export default function MapView() {
       });
     };
 
-    if (map.loaded()) {
+    if (map.isStyleLoaded()) {
       addDiscoverMarkers();
     } else {
-      map.on("load", addDiscoverMarkers);
-    let markers: maplibregl.Marker[] = [];
-
-    if (map.isStyleLoaded()) {
-      markers = addDiscoverMarkers();
-    } else {
       const onLoad = () => {
-        markers = addDiscoverMarkers();
+        addDiscoverMarkers();
       };
       map.once("load", onLoad);
 
@@ -728,7 +699,7 @@ export default function MapView() {
           console.error("経路ポイント送信中にエラーが発生しました:", e);
         }
       },
-      (err) => {
+      (err) => {  
         console.error("位置情報ウォッチ中にエラーが発生しました:", err);
       },
       {
@@ -883,7 +854,7 @@ export default function MapView() {
         className="absolute inset-0 pointer-events-none opacity-30"
         style={{
           backgroundImage: `linear-gradient(to right, white 2px, transparent 2px),
-                         linear-gradient(to bottom, white 2px, transparent 2px)`,
+                        linear-gradient(to bottom, white 2px, transparent 2px)`,
           backgroundSize: "40px 40px",
           maskImage:
             "radial-gradient(circle at center 60%, black 0%, transparent 80%)",

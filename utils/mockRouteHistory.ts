@@ -344,11 +344,37 @@ function persistSavedRoutes(routes: RouteRecord[]): void {
   localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
 }
 
-/** 新しい経路を保存（localStorageに永続化） */
-export function addRoute(route: RouteRecord): void {
-  const saved = loadSavedRoutes();
-  saved.unshift(route);
-  persistSavedRoutes(saved);
+/** 新しい経路を保存（DB の /api/route-history に送信） */
+export async function addRoute(route: RouteRecord): Promise<void> {
+  try {
+    const res = await fetch("/api/route-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: route.date,
+        startTime: route.startTime,
+        startName: route.startName,
+        endName: route.endName,
+        startLat: route.startLat,
+        startLng: route.startLng,
+        endLat: route.endLat,
+        endLng: route.endLng,
+        distanceKm: route.distanceKm,
+        durationMin: route.durationMin,
+        pathPoints: route.pathPoints,
+        places: route.places,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.status !== "success") {
+      console.error(
+        "[addRoute] 経路履歴の保存に失敗しました:",
+        data.detail ?? data.message,
+      );
+    }
+  } catch (e) {
+    console.error("[addRoute] 経路履歴の保存中にエラーが発生しました:", e);
+  }
 }
 
 /** モック + 保存済みを統合して全経路を取得 */
