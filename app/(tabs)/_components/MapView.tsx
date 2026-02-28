@@ -37,6 +37,11 @@ import ExploreResultOverlay, { type PathPoint } from "./ExploreResultOverlay";
 import BottomNavBar from "./BottomNavBar";
 import { addRoute } from "../../../utils/mockRouteHistory";
 import { saveFogUnion, loadFogUnion } from "../../../utils/fogStorage";
+import {
+  saveDestination,
+  loadDestination,
+  clearDestination,
+} from "../../../utils/destinationStorage";
 
 // Haversine距離計算 (km)
 function haversineDistance(
@@ -94,8 +99,12 @@ export default function MapView() {
   const walkedPathRef = useRef<[number, number][]>([]);
   const fogUnionRef = useRef<Feature<Polygon | MultiPolygon> | null>(null);
   const fogSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 発見スポットのマーカーをエフェクトをまたいで管理（レースコンディション防止）
+  const discoverMarkersRef = useRef<maplibregl.Marker[]>([]);
+  // マップ初期化完了フラグ（localStorage復元目的地の再描画に必要）
+  const [mapReady, setMapReady] = useState(false);
   const [mainDestination, setMainDestination] =
-    useState<SearchDestination | null>(null);
+    useState<SearchDestination | null>(() => loadDestination());
   // 到着ポップアップ・結果画面用
   const [showArrivalPopup, setShowArrivalPopup] = useState(false);
   const [showExploreResult, setShowExploreResult] = useState(false);
@@ -124,6 +133,16 @@ export default function MapView() {
   const nearest = selectedPlace ?? places[0] ?? null;
   // マーカー再描画トリガー（行きたい/行った/発見保存後にインクリメント）
   const [markerVersion, setMarkerVersion] = useState(0);
+
+  // トースト通知
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    toastTimerRef.current = setTimeout(() => setToastMessage(null), 2500);
+  };
 
   // --- リアルタイム距離計算 ---
   const livePos = liveLocation ?? userLocation;
@@ -227,8 +246,7 @@ export default function MapView() {
       mainDestinationMarkerRef.current = null;
     }
     setMainDestination(null);
-
-    // GPS記録を停止
+    clearDestination();
     setCurrentRecordId(null);
     currentRecordIdRef.current = null;
     setCurrentTargetPlaceId(null);
@@ -241,6 +259,8 @@ export default function MapView() {
   const handleSelectDestination = async (dest: SearchDestination) => {
     setShowSearch(false);
     setMainDestination(dest);
+    saveDestination(dest);
+    showToast(`「${dest.name}」を目的地に設定しました`);
 
     if (!userLocation) return;
     try {
@@ -402,6 +422,9 @@ export default function MapView() {
           "fill-opacity": 1,
         },
       });
+
+      // マップ準備完了を通知（localStorage復元目的地の再描画トリガー）
+      setMapReady(true);
     });
 
     // 現在地マーカー（me2.webp アイコン）
@@ -427,6 +450,7 @@ export default function MapView() {
       map.remove();
       mapRef.current = null;
       userMarkerRef.current = null;
+      setMapReady(false);
     };
   }, [userLocation]);
 
@@ -574,12 +598,12 @@ export default function MapView() {
       .addTo(map);
 
     mainDestinationMarkerRef.current = marker;
-  }, [mainDestination]);
+  }, [mainDestination, mapReady]);
 
   // お店のマーカーを更新
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || places.length === 0) return;
+    if (!map || !mapReady || places.length === 0) return;
 
     // 場所の状態からピンステートを判定
     const getPlacePinState = (place: Place): PinState => {
@@ -588,14 +612,60 @@ export default function MapView() {
       return 1;
     };
 
-    const addMarkers = () => {
-      const markers: maplibregl.Marker[] = [];
+    const markers: maplibregl.Marker[] = [];
 
-      places.forEach((place) => {
-        const pinState = getPlacePinState(place);
-        const iconPath = getPinIconPath(place.category || "", pinState);
+    places.forEach((place) => {
+      const pinState = getPlacePinState(place);
+      const iconPath = getPinIconPath(place.category || "", pinState);
 
-        // カテゴリ別アイコンマーカー
+      const el = document.createElement("div");
+      el.style.width = "80px";
+      el.style.height = "80px";
+      el.style.backgroundImage = `url("${iconPath}")`;
+      el.style.backgroundSize = "contain";
+      el.style.backgroundRepeat = "no-repeat";
+      el.style.backgroundPosition = "center";
+      el.style.cursor = "pointer";
+
+      const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat([place.lng, place.lat])
+        .addTo(map);
+
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setSelectedPlace(place);
+      });
+
+      markers.push(marker);
+    });
+
+    return () => {
+      markers.forEach((m) => m.remove());
+    };
+  }, [places, markerVersion, mapReady]);
+
+  // 発見スポットのマーカーを描画
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    let cancelled = false;
+
+    const addDiscoverMarkers = async () => {
+      // 既存マーカーをすべて削除
+      discoverMarkersRef.current.forEach((m) => m.remove());
+      discoverMarkersRef.current = [];
+
+      const discovered = await getDiscovered();
+
+      // 非同期完了後にアンマウント済み or 新しいエフェクトが走った場合は何もしない
+      if (cancelled || !mapRef.current) return;
+
+      discovered.forEach((record) => {
+        if (record.lat == null || record.lng == null) return;
+
+        const iconPath = getDiscoverPinIconPath(record.category);
+
         const el = document.createElement("div");
         el.style.width = "80px";
         el.style.height = "80px";
@@ -604,100 +674,36 @@ export default function MapView() {
         el.style.backgroundRepeat = "no-repeat";
         el.style.backgroundPosition = "center";
         el.style.cursor = "pointer";
+        el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.25))";
 
-        const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
-          .setLngLat([place.lng, place.lat])
-          .addTo(map);
+        const marker = new maplibregl.Marker({
+          element: el,
+          anchor: "bottom",
+        })
+          .setLngLat([record.lng, record.lat])
+          .addTo(mapRef.current!);
 
-        // タップで上部カード更新（React stateで管理するポップアップカードを表示）
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          setSelectedPlace(place);
-        });
-
-        markers.push(marker);
-      });
-
-      return markers;
-    };
-
-    let markers: maplibregl.Marker[] = [];
-
-    if (map.isStyleLoaded()) {
-      markers = addMarkers();
-    } else {
-      const onLoad = () => {
-        markers = addMarkers();
-      };
-      map.once("load", onLoad);
-
-      return () => {
-        map.off("load", onLoad);
-        markers.forEach((m) => m.remove());
-      };
-    }
-
-    return () => {
-      markers.forEach((m) => m.remove());
-    };
-  }, [places, markerVersion]);
-
-  // 発見スポットのマーカーを描画
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    let markers: maplibregl.Marker[] = [];
-    const addDiscoverMarkers = () => {
-      void getDiscovered().then((discovered) => {
-        markers.forEach((m) => m.remove());
-        markers = [];
-
-        discovered.forEach((record) => {
-          if (record.lat == null || record.lng == null) return;
-
-          const iconPath = getDiscoverPinIconPath(record.category);
-
-          const el = document.createElement("div");
-          el.style.width = "80px";
-          el.style.height = "80px";
-          el.style.backgroundImage = `url("${iconPath}")`;
-          el.style.backgroundSize = "contain";
-          el.style.backgroundRepeat = "no-repeat";
-          el.style.backgroundPosition = "center";
-          el.style.cursor = "pointer";
-          el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.25))";
-
-          const marker = new maplibregl.Marker({
-            element: el,
-            anchor: "bottom",
-          })
-            .setLngLat([record.lng, record.lat])
-            .addTo(map);
-
-          markers.push(marker);
-        });
+        discoverMarkersRef.current.push(marker);
       });
     };
 
     if (map.isStyleLoaded()) {
-      addDiscoverMarkers();
+      void addDiscoverMarkers();
     } else {
       const onLoad = () => {
-        addDiscoverMarkers();
+        void addDiscoverMarkers();
       };
       map.once("load", onLoad);
-
       return () => {
+        cancelled = true;
         map.off("load", onLoad);
-        markers.forEach((m) => m.remove());
       };
     }
 
     return () => {
-      markers.forEach((m) => m.remove());
+      cancelled = true;
     };
-  }, [markerVersion, userLocation]);
+  }, [markerVersion, userLocation, mapReady]);
 
   // デバイスの向きに応じてマップを回転（現在地アイコンは固定）
   useEffect(() => {
@@ -935,6 +941,16 @@ export default function MapView() {
             "radial-gradient(circle at center 60%, black 0%, transparent 80%)",
         }}
       ></div>
+
+      {/* ===== トースト通知 ===== */}
+      {toastMessage && (
+        <div className="absolute top-24 left-1/2 z-50 -translate-x-1/2 pointer-events-none">
+          <div className="flex items-center gap-2 rounded-full bg-gray-900/80 px-5 py-2.5 text-sm font-medium text-white shadow-lg backdrop-blur-sm">
+            <span>📍</span>
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
 
       {/* ===== 上部オーバーレイ ===== */}
       <div className="absolute top-0 left-0 right-0 z-10 flex flex-col items-start justify-between pt-12 pointer-events-none">
