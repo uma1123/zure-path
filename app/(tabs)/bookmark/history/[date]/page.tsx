@@ -456,7 +456,7 @@ function RouteMap({ route }: { route: RouteRecord }) {
   const mapRef = useRef<maplibregl.Map | null>(null);
 
   useEffect(() => {
-    if (!mapContainer.current || route.pathPoints.length === 0) return;
+    if (!mapContainer.current) return;
 
     // 既存マップを破棄
     if (mapRef.current) {
@@ -475,8 +475,14 @@ function RouteMap({ route }: { route: RouteRecord }) {
     mapRef.current = map;
 
     map.on("load", () => {
-      // 経路ライン
-      const coordinates = route.pathPoints.map((p) => [p.lng, p.lat]);
+      // 経路ライン（歩いた path_points があればそれを使い、無ければスタート〜ゴールの直線）
+      const coordinates =
+        route.pathPoints.length >= 2
+          ? route.pathPoints.map((p) => [p.lng, p.lat])
+          : [
+              [route.startLng, route.startLat],
+              [route.endLng, route.endLat],
+            ];
 
       map.addSource("route", {
         type: "geojson",

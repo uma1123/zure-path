@@ -1,28 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 
-/**
- * Supabase に route_history テーブルが必要です。
- * 例: create table route_history (
- *   id uuid primary key default gen_random_uuid(),
- *   user_id uuid not null references auth.users(id),
- *   date text not null,
- *   start_time text not null,
- *   start_name text not null,
- *   end_name text not null,
- *   start_lat double precision not null,
- *   start_lng double precision not null,
- *   end_lat double precision not null,
- *   end_lng double precision not null,
- *   distance_km double precision not null,
- *   duration_min integer not null,
- *   path_points jsonb not null default '[]',
- *   places jsonb not null default '[]',
- *   created_at timestamptz default now()
- * );
- */
+/** 経路履歴は既存の records + target_places + path_points から組み立てます（route_history テーブルは未使用） */
 
-/** RouteRecord に相当するリクエスト body */
+/** RouteRecord に相当するリクエスト body（POST は未使用・互換用） */
 type PathPoint = { lat: number; lng: number };
 type RoutePlace = {
   id: string;
@@ -147,26 +128,37 @@ export async function POST(request: Request) {
   }
 }
 
-/** DB 行を RouteRecord 形に変換 */
-function rowToRouteRecord(row: Record<string, unknown>) {
-  return {
-    id: String(row.id ?? ""),
-    date: String(row.date ?? ""),
-    startTime: String(row.start_time ?? ""),
-    startName: String(row.start_name ?? ""),
-    endName: String(row.end_name ?? ""),
-    startLat: Number(row.start_lat ?? 0),
-    startLng: Number(row.start_lng ?? 0),
-    endLat: Number(row.end_lat ?? 0),
-    endLng: Number(row.end_lng ?? 0),
-    distanceKm: Number(row.distance_km ?? 0),
-    durationMin: Number(row.duration_min ?? 0),
-    pathPoints: Array.isArray(row.path_points) ? row.path_points : [],
-    places: Array.isArray(row.places) ? row.places : [],
-  };
+/** 2点間の Haversine 距離（km） */
+function haversineKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** 経路履歴一覧取得（認証必須、任意で date クエリ） */
+type RecordRow = {
+  id: string;
+  created_at: string | null;
+  completed_at: string | null;
+  start_lat: number | null;
+  start_lng: number | null;
+  dest_lat: number | null;
+  dest_lng: number | null;
+};
+type TargetPlaceRow = { record_id: string; name: string | null; lat: number | null; lng: number | null };
+type PathPointRow = { record_id: string; recorded_at: string | null; lat: number | null; lng: number | null };
+
+/** 経路履歴一覧取得（records + target_places + path_points から組み立て） */
 export async function GET(request: Request) {
   try {
     const supabase = await createClient();
@@ -178,10 +170,7 @@ export async function GET(request: Request) {
 
     if (userError || !user) {
       return NextResponse.json(
-        {
-          status: "error",
-          message: "認証が必要です",
-        },
+        { status: "error", message: "認証が必要です" },
         { status: 401 },
       );
     }
@@ -189,45 +178,106 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const dateParam = url.searchParams.get("date")?.trim();
 
-    let query = supabase
-      .from("route_history")
-      .select("*")
+    let recordsQuery = supabase
+      .from("records")
+      .select("id, created_at, completed_at, start_lat, start_lng, dest_lat, dest_lng")
       .eq("user_id", user.id)
-      .order("date", { ascending: false })
-      .order("start_time", { ascending: false });
+      .not("completed_at", "is", null)
+      .order("created_at", { ascending: false });
 
-    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-      query = query.eq("date", dateParam);
-    }
+    const { data: records, error: recordsError } = await recordsQuery;
 
-    const { data: rows, error } = await query;
-
-    if (error) {
-      console.error("[/api/route-history] GET select error", error);
+    if (recordsError) {
+      console.error("[/api/route-history] GET records error", recordsError);
       return NextResponse.json(
-        {
-          status: "error",
-          message: "経路履歴の取得に失敗しました",
-          detail: error.message,
-        },
+        { status: "error", message: "経路履歴の取得に失敗しました", detail: recordsError.message },
         { status: 500 },
       );
     }
 
-    const routes = (rows ?? []).map((row) => rowToRouteRecord(row as Record<string, unknown>));
+    const rows = (records ?? []) as RecordRow[];
+    let filtered = rows;
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      filtered = rows.filter((r) => r.created_at?.slice(0, 10) === dateParam);
+    }
+    if (filtered.length === 0) {
+      return NextResponse.json({ status: "success", routes: [] });
+    }
 
-    return NextResponse.json({
-      status: "success",
-      routes,
+    const recordIds = filtered.map((r) => r.id);
+    const { data: targets } = await supabase
+      .from("target_places")
+      .select("record_id, name, lat, lng")
+      .in("record_id", recordIds);
+    const { data: points } = await supabase
+      .from("path_points")
+      .select("record_id, recorded_at, lat, lng")
+      .in("record_id", recordIds)
+      .order("recorded_at", { ascending: true });
+
+    const targetsByRecord = new Map<string, TargetPlaceRow>();
+    for (const t of (targets ?? []) as TargetPlaceRow[]) {
+      if (!targetsByRecord.has(t.record_id)) targetsByRecord.set(t.record_id, t);
+    }
+    const pointsByRecord = new Map<string, PathPointRow[]>();
+    for (const p of (points ?? []) as PathPointRow[]) {
+      const list = pointsByRecord.get(p.record_id) ?? [];
+      list.push(p);
+      pointsByRecord.set(p.record_id, list);
+    }
+
+    const routes = filtered.map((r) => {
+      const created = r.created_at ? new Date(r.created_at) : null;
+      const completed = r.completed_at ? new Date(r.completed_at) : null;
+      const dateStr = r.created_at ? r.created_at.slice(0, 10) : "";
+      const startTimeStr = created
+        ? `${String(created.getHours()).padStart(2, "0")}:${String(created.getMinutes()).padStart(2, "0")}`
+        : "";
+      const target = targetsByRecord.get(r.id);
+      const endName = target?.name ?? "";
+      const endLat = r.dest_lat ?? target?.lat ?? 0;
+      const endLng = r.dest_lng ?? target?.lng ?? 0;
+      const pathRows = pointsByRecord.get(r.id) ?? [];
+      const pathPoints: PathPoint[] = pathRows
+        .filter((p) => p.lat != null && p.lng != null)
+        .map((p) => ({ lat: p.lat!, lng: p.lng! }));
+
+      let distanceKm = 0;
+      for (let i = 1; i < pathPoints.length; i++) {
+        distanceKm += haversineKm(pathPoints[i - 1].lat, pathPoints[i - 1].lng, pathPoints[i].lat, pathPoints[i].lng);
+      }
+      if (pathPoints.length < 2 && r.start_lat != null && r.start_lng != null) {
+        distanceKm = haversineKm(r.start_lat, r.start_lng, endLat, endLng);
+      }
+      distanceKm = Math.round(distanceKm * 10) / 10;
+
+      let durationMin = 0;
+      if (created && completed) {
+        durationMin = Math.max(1, Math.round((completed.getTime() - created.getTime()) / 60000));
+      }
+
+      return {
+        id: r.id,
+        date: dateStr,
+        startTime: startTimeStr,
+        startName: "現在地",
+        endName,
+        startLat: r.start_lat ?? 0,
+        startLng: r.start_lng ?? 0,
+        endLat,
+        endLng,
+        distanceKm,
+        durationMin,
+        pathPoints,
+        places: [] as RoutePlace[],
+      };
     });
+
+    return NextResponse.json({ status: "success", routes });
   } catch (error: unknown) {
     console.error("[/api/route-history] GET unexpected error", error);
     return NextResponse.json(
-      {
-        status: "error",
-        message: "予期せぬエラーが発生しました",
-        detail: error instanceof Error ? error.message : String(error),
-      },
+      { status: "error", message: "予期せぬエラーが発生しました", detail: error instanceof Error ? error.message : String(error) },
       { status: 500 },
     );
   }
