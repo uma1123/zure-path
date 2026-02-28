@@ -35,6 +35,26 @@ import DiscoverPopup from "./DiscoverPopup";
 import ArrivalPopup from "./ArrivalPopup";
 import ExploreResultOverlay, { type PathPoint } from "./ExploreResultOverlay";
 import BottomNavBar from "./BottomNavBar";
+import { addRoute } from "../../../utils/mockRouteHistory";
+import { saveFogUnion, loadFogUnion } from "../../../utils/fogStorage";
+
+// Haversine距離計算 (km)
+function haversineDistance(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export default function MapView() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -73,6 +93,7 @@ export default function MapView() {
   const pathWatchIdRef = useRef<number | null>(null);
   const walkedPathRef = useRef<[number, number][]>([]);
   const fogUnionRef = useRef<Feature<Polygon | MultiPolygon> | null>(null);
+  const fogSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mainDestination, setMainDestination] =
     useState<SearchDestination | null>(null);
   // 到着ポップアップ・結果画面用
@@ -93,10 +114,39 @@ export default function MapView() {
   const [resultDistanceKm, setResultDistanceKm] = useState(0);
   const [resultDurationMin, setResultDurationMin] = useState(0);
 
+  // リアルタイム位置（GPS watchPosition で更新）
+  const [liveLocation, setLiveLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+
   // 最寄りのお店（距離ソート済みの先頭）
   const nearest = selectedPlace ?? places[0] ?? null;
   // マーカー再描画トリガー（行きたい/行った/発見保存後にインクリメント）
   const [markerVersion, setMarkerVersion] = useState(0);
+
+  // --- リアルタイム距離計算 ---
+  const livePos = liveLocation ?? userLocation;
+  const liveDistanceM = (() => {
+    if (!livePos) return null;
+    if (mainDestination) {
+      return haversineDistance(
+        livePos.lat,
+        livePos.lng,
+        mainDestination.lat,
+        mainDestination.lng,
+      ) * 1000; // km → m
+    }
+    if (nearest) {
+      return haversineDistance(
+        livePos.lat,
+        livePos.lng,
+        nearest.lat,
+        nearest.lng,
+      ) * 1000;
+    }
+    return null;
+  })();
 
   // 中央ボタンクリックで検索オーバーレイを表示
   const handleCenterButtonClick = () => {
@@ -180,24 +230,6 @@ export default function MapView() {
 
     // 結果画面を表示
     setShowExploreResult(true);
-  };
-
-  // Haversine距離計算 (km)
-  const haversineDistance = (
-    lat1: number,
-    lng1: number,
-    lat2: number,
-    lng2: number,
-  ): number => {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLng = ((lng2 - lng1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLng / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
   // 目的地選択後の処理（メイン目的地）
@@ -304,13 +336,31 @@ export default function MapView() {
 
     // 霧マスク用のソースとレイヤーを追加（世界ポリゴンで地図を覆い、歩行経路を穴として切り抜く）
     map.on("load", () => {
+      // localStorageから前回の霧マスクを復元
+      const savedFog = loadFogUnion();
+
       // 初期位置に小さな穴を開ける
       const initCircle = turfCircle(
         [userLocation.lng, userLocation.lat],
         0.03,
         { steps: 32, units: "kilometers" },
       );
-      fogUnionRef.current = initCircle as Feature<Polygon>;
+
+      // 保存済みの霧がある場合はマージ、なければ初期円のみ
+      if (savedFog) {
+        try {
+          const fc = turfFc([
+            savedFog as Feature<Polygon | MultiPolygon>,
+            initCircle as Feature<Polygon>,
+          ]);
+          const merged = turfUnion(fc);
+          fogUnionRef.current = merged ?? (initCircle as Feature<Polygon>);
+        } catch {
+          fogUnionRef.current = initCircle as Feature<Polygon>;
+        }
+      } else {
+        fogUnionRef.current = initCircle as Feature<Polygon>;
+      }
       walkedPathRef.current = [[userLocation.lng, userLocation.lat]];
 
       const worldOuter: [number, number][] = [
@@ -320,8 +370,18 @@ export default function MapView() {
         [-180, 90],
         [-180, -90],
       ];
-      const hole = initCircle.geometry.coordinates[0] as [number, number][];
-      const fogPoly = turfPolygon([worldOuter, hole]);
+
+      // 復元した霧マスクから穴を生成
+      const geom = fogUnionRef.current!.geometry;
+      let initHoles: [number, number][][];
+      if (geom.type === "Polygon") {
+        initHoles = [geom.coordinates[0] as [number, number][]];
+      } else {
+        initHoles = geom.coordinates.map(
+          (poly) => poly[0] as [number, number][],
+        );
+      }
+      const fogPoly = turfPolygon([worldOuter, ...initHoles]);
 
       map.addSource("fog-mask", {
         type: "geojson",
@@ -379,6 +439,9 @@ export default function MapView() {
         // 現在地マーカーを移動
         userMarkerRef.current?.setLngLat([lng, lat]);
 
+        // リアルタイム位置を更新（距離計算用）
+        setLiveLocation({ lat, lng });
+
         // マップ中央を追従
         map.easeTo({
           center: [lng, lat],
@@ -433,6 +496,15 @@ export default function MapView() {
             const fogPoly = turfPolygon([worldOuter, ...holes]);
             src.setData(fogPoly as any);
           }
+          // デバウンスしてlocalStorageに保存（3秒間隔）
+          if (fogSaveTimerRef.current) {
+            clearTimeout(fogSaveTimerRef.current);
+          }
+          fogSaveTimerRef.current = setTimeout(() => {
+            if (fogUnionRef.current) {
+              saveFogUnion(fogUnionRef.current);
+            }
+          }, 3000);
         } catch (e) {
           console.error("霧マスク更新エラー:", e);
         }
@@ -453,6 +525,13 @@ export default function MapView() {
       if (pathWatchIdRef.current != null) {
         navigator.geolocation.clearWatch(pathWatchIdRef.current);
         pathWatchIdRef.current = null;
+      }
+      // アンマウント時に最終状態を保存
+      if (fogSaveTimerRef.current) {
+        clearTimeout(fogSaveTimerRef.current);
+      }
+      if (fogUnionRef.current) {
+        saveFogUnion(fogUnionRef.current);
       }
     };
   }, [userLocation]);
@@ -854,7 +933,12 @@ export default function MapView() {
 
       {/* ===== 上部オーバーレイ ===== */}
       <div className="absolute top-0 left-0 right-0 z-10 flex flex-col items-start justify-between pt-12 pointer-events-none">
-        <NearestPlaceCard isLoading={isLoading} nearest={nearest} />
+        <NearestPlaceCard
+          isLoading={isLoading}
+          nearest={nearest}
+          destinationName={mainDestination?.name}
+          liveDistanceM={liveDistanceM}
+        />
 
         <ActionButtons
           isPeeking={isPeeking}
