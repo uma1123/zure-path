@@ -35,8 +35,6 @@ export function useFetchPlaces(
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const lastFetchLocation = useRef<{ lat: number; lng: number } | null>(null);
-  // 既知のPlaceキーを保持（重複排除用）
-  const knownKeysRef = useRef<Set<string>>(new Set());
 
   // 周辺のお店を取得（300m以内ならキャッシュを利用）
   const fetchPlaces = useCallback(async () => {
@@ -70,17 +68,12 @@ export function useFetchPlaces(
         return;
       }
 
-      // マージ：既存 + 新規（重複排除）
+      // マージ：既存 + 新規（prev から重複チェック、副作用なしの純粋関数）
       setPlaces((prev) => {
-        const newPlaces: Place[] = [];
-        for (const p of data.places) {
-          const key = placeKey(p);
-          if (!knownKeysRef.current.has(key)) {
-            knownKeysRef.current.add(key);
-            newPlaces.push(p);
-          }
-        }
-
+        const existingKeys = new Set(prev.map(placeKey));
+        const newPlaces = data.places.filter(
+          (p) => !existingKeys.has(placeKey(p)),
+        );
         const merged = [...prev, ...newPlaces];
 
         // 上限を超えたら現在地から遠い順に削除
@@ -90,11 +83,6 @@ export function useFetchPlaces(
               getDistanceMeters(userLocation, a) -
               getDistanceMeters(userLocation, b),
           );
-          // 削除分のキーをSetから除去
-          const removed = merged.slice(MAX_PLACES);
-          for (const r of removed) {
-            knownKeysRef.current.delete(placeKey(r));
-          }
           return merged.slice(0, MAX_PLACES);
         }
 
@@ -105,7 +93,8 @@ export function useFetchPlaces(
         lat: userLocation.lat,
         lng: userLocation.lng,
       };
-    } catch {
+    } catch (err) {
+      console.error("[useFetchPlaces] fetch error:", err);
       setFetchError("通信エラーが発生しました");
     } finally {
       setIsLoading(false);
