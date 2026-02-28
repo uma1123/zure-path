@@ -281,6 +281,27 @@ export const getCategoryDisplay = (osmTag: string): CategoryDisplay => {
   return OSM_TAG_TO_DISPLAY[osmTag] || DEFAULT_DISPLAY;
 };
 
+/**
+ * カテゴリ名（OSMタグまたは日本語カテゴリ名）からカテゴリ画像パスを取得する
+ * ブックマーク一覧などで使用
+ */
+export const getCategoryImageByName = (category: string): string => {
+  // 1. OSMタグとして直接マッチ
+  if (OSM_TAG_TO_DISPLAY[category]) {
+    return OSM_TAG_TO_DISPLAY[category].image;
+  }
+
+  // 2. 日本語カテゴリ名 → OSMタグ → 画像
+  const osmTags = CATEGORY_TO_OSM_TAGS[category];
+  if (osmTags && osmTags.length > 0) {
+    const display = OSM_TAG_TO_DISPLAY[osmTags[0]];
+    if (display) return display.image;
+  }
+
+  // 3. デフォルト
+  return DEFAULT_DISPLAY.image;
+};
+
 // ==========================================
 // 4. OSMタグからピンアイコンカテゴリを判定するマッピング
 // ==========================================
