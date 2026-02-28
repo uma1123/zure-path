@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const THROTTLE_MS = 3000; // 位置更新スロットル（3秒）
 
 export function useUserLocation() {
   const [userLocation, setUserLocation] = useState<{
@@ -8,6 +10,7 @@ export function useUserLocation() {
     lng: number;
   } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const lastUpdateRef = useRef<number>(0);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -15,8 +18,17 @@ export function useUserLocation() {
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
+    const watchId = navigator.geolocation.watchPosition(
       (position) => {
+        const now = Date.now();
+        // 前回の更新から THROTTLE_MS 以内ならスキップ（初回は即座に反映）
+        if (
+          lastUpdateRef.current &&
+          now - lastUpdateRef.current < THROTTLE_MS
+        ) {
+          return;
+        }
+        lastUpdateRef.current = now;
         setUserLocation({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
@@ -40,9 +52,13 @@ export function useUserLocation() {
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 60000, // 1分以内のキャッシュを利用して高速化
+        maximumAge: 3000, // スロットルに合わせたキャッシュ
       },
     );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
   return { userLocation, locationError };

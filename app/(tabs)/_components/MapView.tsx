@@ -101,6 +101,8 @@ export default function MapView() {
   const fogSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 発見スポットのマーカーをエフェクトをまたいで管理（レースコンディション防止）
   const discoverMarkersRef = useRef<maplibregl.Marker[]>([]);
+  // お店マーカーの差分管理用（キー: "name::lat,lng"）
+  const placeMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   // マップ初期化完了フラグ（localStorage復元目的地の再描画に必要）
   const [mapReady, setMapReady] = useState(false);
   const [mainDestination, setMainDestination] =
@@ -600,10 +602,10 @@ export default function MapView() {
     mainDestinationMarkerRef.current = marker;
   }, [mainDestination, mapReady]);
 
-  // お店のマーカーを更新
+  // お店のマーカーを差分更新
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || places.length === 0) return;
+    if (!map || !mapReady) return;
 
     // 場所の状態からピンステートを判定
     const getPlacePinState = (place: Place): PinState => {
@@ -612,11 +614,33 @@ export default function MapView() {
       return 1;
     };
 
-    const markers: maplibregl.Marker[] = [];
+    const toKey = (p: Place) =>
+      `${p.name}::${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
 
+    const currentKeys = new Set(places.map(toKey));
+    const prevMap = placeMarkersRef.current;
+
+    // 1. 不要になったマーカーを削除
+    for (const [key, marker] of prevMap) {
+      if (!currentKeys.has(key)) {
+        marker.remove();
+        prevMap.delete(key);
+      }
+    }
+
+    // 2. 新規 place のみマーカーを追加、既存は markerVersion 変更時にアイコン更新
     places.forEach((place) => {
+      const key = toKey(place);
       const pinState = getPlacePinState(place);
       const iconPath = getPinIconPath(place.category || "", pinState);
+
+      const existing = prevMap.get(key);
+      if (existing) {
+        // ブックマーク状態変更時のアイコン更新
+        const el = existing.getElement();
+        el.style.backgroundImage = `url("${iconPath}")`;
+        return;
+      }
 
       const el = document.createElement("div");
       el.style.width = "80px";
@@ -636,12 +660,8 @@ export default function MapView() {
         setSelectedPlace(place);
       });
 
-      markers.push(marker);
+      prevMap.set(key, marker);
     });
-
-    return () => {
-      markers.forEach((m) => m.remove());
-    };
   }, [places, markerVersion, mapReady]);
 
   // 発見スポットのマーカーを描画
