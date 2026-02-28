@@ -108,11 +108,17 @@ export function Login() {
       })}
 
       {/* 中央コンテンツ */}
-      <div className="relative z-10 flex flex-col items-center gap-2">
-        <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
-          MapBook
-        </h1>
-        <p className="text-base text-gray-500">地図で楽しく本を探そう</p>
+      <div className="relative z-10 flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-1.5">
+          <h1 className="text-5xl font-black text-gray-900 tracking-tight">
+            とことこ
+          </h1>
+          <div className="flex items-center gap-2">
+            <span className="text-amber-400 text-xs">✦</span>
+            <p className="text-sm text-gray-500">偶然の発見から小さな刺激を</p>
+            <span className="text-amber-400 text-xs">✦</span>
+          </div>
+        </div>
       </div>
 
       {/* ログインボタン */}
