@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { FILTER_OPTIONS } from "../../../utils/category";
-import { saveDiscovered } from "../../../utils/bookmarkStorage";
 
 type Props = {
   show: boolean;
@@ -22,20 +21,32 @@ export default function DiscoverPopup({
   const [memo, setMemo] = useState("");
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!show) return null;
 
-  const handleSave = () => {
-    if (!name.trim()) return;
-    saveDiscovered(
-      name.trim(),
-      selectedCategory,
-      memo,
-      photoPreview ?? undefined,
-      userLocation?.lat,
-      userLocation?.lng,
-    );
+  const handleSave = async () => {
+    if (!name.trim() || isSaving) return;
+    setIsSaving(true);
+    try {
+      await fetch("/api/bookmarks/discovered", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          category: selectedCategory,
+          comment: memo || undefined,
+          imageUrl: photoPreview ?? undefined,
+          lat: userLocation?.lat,
+          lng: userLocation?.lng,
+        }),
+      });
+    } catch {
+      // サイレントに失敗
+    } finally {
+      setIsSaving(false);
+    }
     // リセット
     setName("");
     setSelectedCategory("");
@@ -225,10 +236,10 @@ export default function DiscoverPopup({
         <div className="px-5">
           <button
             onClick={handleSave}
-            disabled={!name.trim()}
+            disabled={!name.trim() || isSaving}
             className="w-full rounded-full bg-yellow-400 py-3 text-sm font-bold text-white active:bg-yellow-500 transition-colors disabled:opacity-40"
           >
-            発見した！
+            {isSaving ? "保存中..." : "発見した！"}
           </button>
         </div>
       </div>
