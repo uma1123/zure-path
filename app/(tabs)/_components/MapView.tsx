@@ -103,6 +103,12 @@ export default function MapView() {
   const discoverMarkersRef = useRef<maplibregl.Marker[]>([]);
   // お店マーカーの差分管理用（キー: "name::lat,lng"）
   const placeMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  // マップ初期化時の位置を記録（watchPositionで位置が更新されてもマップを再初期化しない）
+  const mapInitLocRef = useRef<{ lat: number; lng: number } | null>(null);
+  // render中に初回のuserLocationを同期キャプチャ（一度設定したら更新しない）
+  if (!mapInitLocRef.current && userLocation) {
+    mapInitLocRef.current = userLocation;
+  }
   // マップ初期化完了フラグ（localStorage復元目的地の再描画に必要）
   const [mapReady, setMapReady] = useState(false);
   const [mainDestination, setMainDestination] =
@@ -302,9 +308,10 @@ export default function MapView() {
     }
   };
 
-  // 地図を初期化
+  // 地図を初期化（mapInitLocRefにより、watchPositionで位置が更新されても再初期化しない）
   useEffect(() => {
-    if (!userLocation || !mapContainerRef.current || mapRef.current) return;
+    const initLoc = mapInitLocRef.current;
+    if (!initLoc || !mapContainerRef.current) return;
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -345,7 +352,7 @@ export default function MapView() {
           },
         ],
       },
-      center: [userLocation.lng, userLocation.lat],
+      center: [initLoc.lng, initLoc.lat],
       zoom: 17,
       pitch: 0,
       attributionControl: false,
@@ -367,11 +374,10 @@ export default function MapView() {
       const savedFog = loadFogUnion();
 
       // 初期位置に小さな穴を開ける
-      const initCircle = turfCircle(
-        [userLocation.lng, userLocation.lat],
-        0.03,
-        { steps: 32, units: "kilometers" },
-      );
+      const initCircle = turfCircle([initLoc.lng, initLoc.lat], 0.03, {
+        steps: 32,
+        units: "kilometers",
+      });
 
       // 保存済みの霧がある場合はマージ、なければ初期円のみ
       if (savedFog) {
@@ -388,7 +394,7 @@ export default function MapView() {
       } else {
         fogUnionRef.current = initCircle as Feature<Polygon>;
       }
-      walkedPathRef.current = [[userLocation.lng, userLocation.lat]];
+      walkedPathRef.current = [[initLoc.lng, initLoc.lat]];
 
       const worldOuter: [number, number][] = [
         [-180, -90],
@@ -442,7 +448,7 @@ export default function MapView() {
       element: userEl,
       anchor: "center",
     })
-      .setLngLat([userLocation.lng, userLocation.lat])
+      .setLngLat([initLoc.lng, initLoc.lat])
       .addTo(map);
     userMarkerRef.current = userMarker;
 
@@ -452,9 +458,12 @@ export default function MapView() {
       map.remove();
       mapRef.current = null;
       userMarkerRef.current = null;
+      placeMarkersRef.current.clear();
       setMapReady(false);
     };
-  }, [userLocation]);
+    // mapInitLocRefはrender中に同期設定されるため、!!で変化を検知する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!mapInitLocRef.current]);
 
   // 常時位置トラッキング: 現在地マーカー追従 + 霧マスク更新
   useEffect(() => {
