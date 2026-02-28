@@ -35,7 +35,6 @@ import DiscoverPopup from "./DiscoverPopup";
 import ArrivalPopup from "./ArrivalPopup";
 import ExploreResultOverlay, { type PathPoint } from "./ExploreResultOverlay";
 import BottomNavBar from "./BottomNavBar";
-import { addRoute } from "../../../utils/mockRouteHistory";
 
 export default function MapView() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -67,6 +66,7 @@ export default function MapView() {
     string | null
   >(null);
   const watchIdRef = useRef<number | null>(null);
+  const currentRecordIdRef = useRef<string | null>(null);
   const mainDestinationMarkerRef = useRef<maplibregl.Marker | null>(null);
   // 常時位置トラッキング & 霧マスク用
   const userMarkerRef = useRef<maplibregl.Marker | null>(null);
@@ -104,7 +104,7 @@ export default function MapView() {
   };
 
   // 到着ハンドラー: 探索を終了し結果画面を表示
-  const handleArrival = () => {
+  const handleArrival = async () => {
     setShowArrivalPopup(false);
 
     if (!mainDestination || !userLocation) return;
@@ -151,32 +151,20 @@ export default function MapView() {
     setResultDistanceKm(distanceKm);
     setResultDurationMin(durationMin);
 
-    // 経路履歴に保存
-    const now = new Date();
-    const dateStr = now.toISOString().split("T")[0];
-    const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-
-    addRoute({
-      id: `r-${Date.now()}`,
-      date: dateStr,
-      startTime: timeStr,
-      startName: "現在地",
-      endName: mainDestination.name,
-      startLat: userLocation.lat,
-      startLng: userLocation.lng,
-      endLat: mainDestination.lat,
-      endLng: mainDestination.lng,
-      distanceKm,
-      durationMin,
-      pathPoints:
-        pathPoints.length >= 2
-          ? pathPoints
-          : [
-              { lat: userLocation.lat, lng: userLocation.lng },
-              { lat: mainDestination.lat, lng: mainDestination.lng },
-            ],
-      places: [],
-    });
+    // 既存の record を「到着完了」にする（カレンダー履歴に表示される）
+    const recordId = currentRecordId ?? currentRecordIdRef.current;
+    if (recordId) {
+      try {
+        const res = await fetch(`/api/records/${recordId}/complete`, { method: "PATCH" });
+        const data = await res.json();
+        if (!res.ok) {
+          console.error("[handleArrival] complete failed", data?.detail ?? data?.message ?? res.status);
+        }
+      } catch (e) {
+        console.error("[handleArrival] complete request error", e);
+      }
+      currentRecordIdRef.current = null;
+    }
 
     // 目的地ピンを削除
     if (mainDestinationMarkerRef.current) {
@@ -187,6 +175,7 @@ export default function MapView() {
 
     // GPS記録を停止
     setCurrentRecordId(null);
+    currentRecordIdRef.current = null;
     setCurrentTargetPlaceId(null);
 
     // 結果画面を表示
@@ -240,7 +229,9 @@ export default function MapView() {
         return;
       }
 
-      setCurrentRecordId(data.recordId ?? null);
+      const rid = data.recordId ?? null;
+      setCurrentRecordId(rid);
+      currentRecordIdRef.current = rid;
       setCurrentTargetPlaceId(data.targetPlaceId ?? null);
       // 新しいルート開始時は既存のルート表示をクリア
       setRouteGeometry(null);
@@ -584,8 +575,8 @@ export default function MapView() {
           const iconPath = getDiscoverPinIconPath(record.category);
 
           const el = document.createElement("div");
-          el.style.width = "60px";
-          el.style.height = "60px";
+          el.style.width = "80px";
+          el.style.height = "80px";
           el.style.backgroundImage = `url("${iconPath}")`;
           el.style.backgroundSize = "contain";
           el.style.backgroundRepeat = "no-repeat";

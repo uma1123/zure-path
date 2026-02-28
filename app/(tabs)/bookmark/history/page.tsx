@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getDatesWithRoutes } from "../../../../utils/mockRouteHistory";
 
@@ -22,11 +22,36 @@ export default function HistoryPage() {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
+  const [datesWithRoutes, setDatesWithRoutes] = useState<Set<string>>(new Set());
 
-  // 経路が存在する日付セット
-  const datesWithRoutes = useMemo(() => {
-    return new Set(getDatesWithRoutes());
+  const fetchDatesWithRoutes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/route-history");
+      const data = await res.json();
+      if (res.ok && data.status === "success" && Array.isArray(data.routes)) {
+        const dates = [...new Set((data.routes as { date: string }[]).map((r) => r.date))];
+        setDatesWithRoutes(new Set(dates));
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    setDatesWithRoutes(new Set(getDatesWithRoutes()));
   }, []);
+
+  // 経路が存在する日付を API から取得（マウント時＋画面表示時に再取得）
+  useEffect(() => {
+    fetchDatesWithRoutes();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchDatesWithRoutes();
+    };
+    window.addEventListener("focus", fetchDatesWithRoutes);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", fetchDatesWithRoutes);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [fetchDatesWithRoutes]);
 
   // カレンダーデータ生成
   const calendarData = useMemo(() => {
