@@ -47,10 +47,7 @@ export default function SearchOverlay({
     if (typeof window === "undefined") return;
     setHistory((prev) => {
       const exists = prev.some(
-        (h) =>
-          h.name === dest.name &&
-          h.lat === dest.lat &&
-          h.lng === dest.lng,
+        (h) => h.name === dest.name && h.lat === dest.lat && h.lng === dest.lng,
       );
       const next = exists ? prev : [dest, ...prev].slice(0, 10);
       try {
@@ -126,7 +123,7 @@ export default function SearchOverlay({
                 type="text"
                 autoFocus
                 placeholder="目的地を検索"
-                className="w-full bg-gray-100 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full bg-gray-100 rounded-full py-2 pl-10 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 onKeyDown={(e) => {

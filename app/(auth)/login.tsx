@@ -109,12 +109,10 @@ export function Login() {
 
       {/* 中央コンテンツ */}
       <div className="relative z-10 flex flex-col items-center gap-2">
-        <h1 className="text-4xl font-bold text-foreground tracking-tight">
+        <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
           MapBook
         </h1>
-        <p className="text-base text-muted-foreground">
-          地図で楽しく本を探そう
-        </p>
+        <p className="text-base text-gray-500">地図で楽しく本を探そう</p>
       </div>
 
       {/* ログインボタン */}
@@ -130,7 +128,7 @@ export function Login() {
               setError("Google ログインに失敗しました");
             }
           }}
-          className="w-full flex items-center justify-center gap-3 rounded-full bg-white py-3.5 px-6 text-base font-medium text-foreground shadow-sm border border-gray-200 active:bg-gray-50"
+          className="w-full flex items-center justify-center gap-3 rounded-full bg-white py-3.5 px-6 text-base font-medium text-gray-900 shadow-sm border border-gray-200 active:bg-gray-50"
         >
           {/* Google "G" アイコン */}
           <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
@@ -155,24 +153,21 @@ export function Login() {
         </button>
 
         {error && (
-          <div
-            className="mt-3 text-center text-sm text-destructive"
-            role="alert"
-          >
+          <div className="mt-3 text-center text-sm text-red-500" role="alert">
             {error}
           </div>
         )}
       </div>
 
       {/* 利用規約・プライバシーポリシー */}
-      <div className="relative z-10 mt-8 w-full max-w-xs text-center text-sm text-muted-foreground leading-relaxed">
+      <div className="relative z-10 mt-8 w-full max-w-xs text-center text-sm text-gray-500 leading-relaxed">
         ログインすることで
-        <a href="#" className="text-primary underline underline-offset-2">
+        <a href="#" className="text-green-600 underline underline-offset-2">
           利用規約
         </a>
         と
         <br />
-        <a href="#" className="text-primary underline underline-offset-2">
+        <a href="#" className="text-green-600 underline underline-offset-2">
           プライバシーポリシー
         </a>
         に同意したものとみなされます
