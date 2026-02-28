@@ -7,6 +7,13 @@ import {
   type RouteRecord,
   type RoutePlace,
 } from "../../../../../utils/mockRouteHistory";
+import {
+  getVisited,
+  getWanted,
+  getDiscovered,
+  type PlaceRecord,
+} from "../../../../../utils/bookmarkStorage";
+import { getCategoryImageByName } from "../../../../../utils/category";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -25,11 +32,72 @@ export default function RouteDetailPage() {
   const params = useParams();
   const date = params.date as string;
 
-  const routes = useMemo(() => getRoutesByDate(date), [date]);
+  const [routes, setRoutes] = useState<RouteRecord[]>([]);
+  const [dayBookmarks, setDayBookmarks] = useState<{
+    visited: PlaceRecord[];
+    wanted: PlaceRecord[];
+    discovered: PlaceRecord[];
+  }>({ visited: [], wanted: [], discovered: [] });
+
+  // 経路を API から取得（失敗時は getRoutesByDate）
+  useEffect(() => {
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/route-history?date=${encodeURIComponent(date)}`);
+        const data = await res.json();
+        if (!cancelled && res.ok && data.status === "success" && Array.isArray(data.routes)) {
+          setRoutes(data.routes as RouteRecord[]);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      if (!cancelled) {
+        setRoutes(getRoutesByDate(date));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
+  // その日の行った・行きたい・発見を取得
+  useEffect(() => {
+    if (!date) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [visited, wanted, discovered] = await Promise.all([
+          getVisited(),
+          getWanted(),
+          getDiscovered(),
+        ]);
+        if (cancelled) return;
+        setDayBookmarks({
+          visited: visited.filter((r) => r.rawDate === date),
+          wanted: wanted.filter((r) => r.rawDate === date),
+          discovered: discovered.filter((r) => r.rawDate === date),
+        });
+      } catch {
+        if (!cancelled) setDayBookmarks({ visited: [], wanted: [], discovered: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
 
   // 選択中の経路 index（複数経路がある場合）
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const currentRoute = routes[selectedIdx] ?? null;
+  useEffect(() => {
+    if (routes.length > 0 && selectedIdx >= routes.length) {
+      setSelectedIdx(0);
+    }
+  }, [routes.length, selectedIdx]);
+  const safeIdx = routes.length > 0 ? Math.min(selectedIdx, routes.length - 1) : 0;
+  const currentRoute = routes[safeIdx] ?? null;
 
   // 日付表示用フォーマット "2026.2.25 / 14:30~"
   const displayDate = useMemo(() => {
@@ -39,11 +107,19 @@ export default function RouteDetailPage() {
     return `${y}.${Number(m)}.${Number(d)}${time ? ` / ${time}~` : ""}`;
   }, [date, currentRoute]);
 
-  // 全経路の場所を統合
+  // 全経路の場所を統合（経路に紐づく places）
   const allPlaces = useMemo(() => {
     if (!currentRoute) return [];
     return currentRoute.places;
   }, [currentRoute]);
+
+  // その日の合計距離・時間（複数経路時）
+  const dayTotal = useMemo(() => {
+    if (routes.length <= 1) return null;
+    const totalKm = routes.reduce((acc, r) => acc + r.distanceKm, 0);
+    const totalMin = routes.reduce((acc, r) => acc + r.durationMin, 0);
+    return { totalKm: Math.round(totalKm * 10) / 10, totalMin };
+  }, [routes]);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -76,13 +152,20 @@ export default function RouteDetailPage() {
       </div>
 
       {/* ===== コンテンツ ===== */}
-      {routes.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-gray-400 text-sm">
-            この日の経路データはありません
-          </p>
-        </div>
-      ) : (
+      {/* 経路がない場合のメッセージ（ブックマークがある場合は「経路はない」旨のみ） */}
+      {routes.length === 0 &&
+        (dayBookmarks.visited.length > 0 ||
+          dayBookmarks.wanted.length > 0 ||
+          dayBookmarks.discovered.length > 0) && (
+          <div className="text-center py-8 px-4">
+            <p className="text-gray-400 text-sm">
+              この日の経路データはありません
+            </p>
+          </div>
+        )}
+
+      {/* 経路がある場合: タブ・地図・距離・時間・経路に紐づく places */}
+      {routes.length > 0 && (
         <>
           {/* 複数経路がある場合のタブ */}
           {routes.length > 1 && (
@@ -92,7 +175,7 @@ export default function RouteDetailPage() {
                   key={r.id}
                   onClick={() => setSelectedIdx(i)}
                   className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${
-                    selectedIdx === i
+                    safeIdx === i
                       ? "bg-sky-400 text-white"
                       : "bg-white text-gray-500 border border-gray-200"
                   }`}
@@ -100,6 +183,16 @@ export default function RouteDetailPage() {
                   経路 {i + 1}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* その日の合計（複数経路時） */}
+          {dayTotal && (
+            <div className="mx-4 mt-3 mb-1 px-4 py-2 bg-sky-50 rounded-xl border border-sky-100">
+              <p className="text-xs text-sky-600 font-bold mb-0.5">この日の合計</p>
+              <p className="text-base font-bold text-gray-800">
+                {dayTotal.totalKm}km / {dayTotal.totalMin}分
+              </p>
             </div>
           )}
 
@@ -116,7 +209,7 @@ export default function RouteDetailPage() {
               {/* 距離・時間バー */}
               <StatsBar route={currentRoute} />
 
-              {/* 場所リスト */}
+              {/* 経路に紐づく場所リスト */}
               {allPlaces.length > 0 && (
                 <div className="px-4 pt-2 pb-4 space-y-0">
                   {allPlaces.map((place, i) => (
@@ -133,6 +226,38 @@ export default function RouteDetailPage() {
           )}
         </>
       )}
+
+      {/* この日の行った・行きたい・発見（経路の有無にかかわらず表示） */}
+      {(dayBookmarks.visited.length > 0 ||
+        dayBookmarks.wanted.length > 0 ||
+        dayBookmarks.discovered.length > 0) && (
+        <div className="px-4 pt-4 pb-6 border-t border-gray-100 mt-4">
+          <h3 className="text-sm font-bold text-gray-600 mb-3">
+            この日の行った・行きたい・発見
+          </h3>
+          <div className="space-y-3">
+            {dayBookmarks.visited.map((item) => (
+              <BookmarkCard key={`v-${item.id}`} item={item} kind="visited" />
+            ))}
+            {dayBookmarks.wanted.map((item) => (
+              <BookmarkCard key={`w-${item.id}`} item={item} kind="wanted" />
+            ))}
+            {dayBookmarks.discovered.map((item) => (
+              <BookmarkCard key={`d-${item.id}`} item={item} kind="discovered" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 経路もブックマークもない場合 */}
+      {routes.length === 0 &&
+        dayBookmarks.visited.length === 0 &&
+        dayBookmarks.wanted.length === 0 &&
+        dayBookmarks.discovered.length === 0 && (
+          <div className="text-center py-20 px-4">
+            <p className="text-gray-400 text-sm">この日のデータはありません</p>
+          </div>
+        )}
     </div>
   );
 }
@@ -193,84 +318,131 @@ function StatsBar({ route }: { route: RouteRecord }) {
 }
 
 // ========================================
-// 場所カード（画像のUIに合わせたリスト）
+// 場所カード（画像・高さを固定して統一）
 // ========================================
 function PlaceCard({ place }: { place: RoutePlace }) {
   const statusConf = STATUS_CONFIG[place.status] ?? STATUS_CONFIG.visited;
+  const [imgError, setImgError] = useState(false);
+  const displayImage =
+    !imgError && place.imageUrl
+      ? place.imageUrl
+      : getCategoryImageByName(place.category ?? "");
 
   return (
-    <div className="bg-white px-4 py-4">
-      {/* 名前 */}
-      <h4 className="text-base font-bold text-gray-800 mb-1">{place.name}</h4>
-
-      {/* 星評価 */}
-      {place.rating && (
-        <div className="flex text-sm mb-1.5">
-          {[...Array(5)].map((_, i) => (
-            <span
-              key={i}
-              className={
-                i < (place.rating ?? 0) ? "text-yellow-400" : "text-gray-300"
-              }
-            >
-              ★
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* カテゴリ・営業時間・距離 */}
-      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mb-2">
-        <span className="bg-gray-100 px-1.5 py-0.5 rounded">
-          {place.category}
-        </span>
-        {place.hours && <span>{place.hours}</span>}
-        {place.distance && <span>{place.distance}</span>}
-      </div>
-
-      {/* コメント + 画像 */}
-      <div className="flex gap-3">
-        <div className="flex-1 min-w-0">
-          {place.comment && (
-            <div className="flex items-start gap-1 text-xs text-gray-600">
-              <span className="text-gray-400 mt-0.5 shrink-0">✎</span>
-              <p className="line-clamp-2 leading-relaxed">{place.comment}</p>
-            </div>
-          )}
-
-          {/* ステータスバッジ */}
-          <div className="mt-2">
-            <span
-              className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${statusConf.bg} ${statusConf.text}`}
-            >
-              {statusConf.label}
-            </span>
-          </div>
-        </div>
-
-        {/* 画像プレースホルダー */}
-        <div className="w-24 h-18 shrink-0 bg-gray-200 rounded-lg overflow-hidden">
-          <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-100">
-            {place.imageUrl ? (
-              <span className="text-xs">Image</span>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={1.5}
-                stroke="currentColor"
-                className="w-7 h-7"
+    <div className="bg-white px-4 py-4 min-h-[120px] flex gap-3">
+      <div className="flex-1 min-w-0 flex flex-col justify-center">
+        <h4 className="text-base font-bold text-gray-800 mb-1">
+          {place.name}
+        </h4>
+        {place.rating != null && (
+          <div className="flex text-sm mb-1">
+            {[...Array(5)].map((_, i) => (
+              <span
+                key={i}
+                className={
+                  i < (place.rating ?? 0) ? "text-yellow-400" : "text-gray-300"
+                }
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
-                />
-              </svg>
-            )}
+                ★
+              </span>
+            ))}
           </div>
+        )}
+        <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mb-1">
+          <span className="bg-gray-100 px-1.5 py-0.5 rounded">
+            {place.category}
+          </span>
+          {place.hours && <span>{place.hours}</span>}
+          {place.distance && <span>{place.distance}</span>}
         </div>
+        {place.comment && (
+          <p className="text-xs text-gray-600 leading-relaxed">
+            {place.comment}
+          </p>
+        )}
+        <div className="mt-2">
+          <span
+            className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${statusConf.bg} ${statusConf.text}`}
+          >
+            {statusConf.label}
+          </span>
+        </div>
+      </div>
+      <div className="w-28 h-20 shrink-0 rounded-lg overflow-hidden bg-gray-200 shadow-sm">
+        <img
+          src={displayImage}
+          alt={place.name}
+          className="w-full h-full object-cover"
+          onError={() => setImgError(true)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// ブックマークカード（この日の行った・行きたい・発見・画像は常に表示・高さ統一）
+// ========================================
+function BookmarkCard({
+  item,
+  kind,
+}: {
+  item: PlaceRecord;
+  kind: "visited" | "wanted" | "discovered";
+}) {
+  const statusConf = STATUS_CONFIG[kind];
+  const [imgError, setImgError] = useState(false);
+  const displayImage =
+    !imgError && item.imageUrl
+      ? item.imageUrl
+      : getCategoryImageByName(item.category ?? "");
+
+  return (
+    <div className="bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-sm min-h-[100px] flex gap-3">
+      <div className="flex-1 min-w-0 flex flex-col justify-center">
+        <h4 className="text-base font-bold text-gray-800">
+          {item.name}
+        </h4>
+        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+          <span className="bg-gray-100 px-1.5 py-0.5 rounded">
+            {item.category}
+          </span>
+          {item.distance && <span>{item.distance}</span>}
+        </div>
+        {kind === "visited" && item.rating != null && (
+          <div className="flex text-sm mt-1">
+            {[...Array(5)].map((_, i) => (
+              <span
+                key={i}
+                className={
+                  i < (item.rating ?? 0) ? "text-yellow-400" : "text-gray-300"
+                }
+              >
+                ★
+              </span>
+            ))}
+          </div>
+        )}
+        {item.comment && (
+          <p className="text-xs text-gray-600 mt-1">
+            {item.comment}
+          </p>
+        )}
+        <div className="mt-2">
+          <span
+            className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${statusConf.bg} ${statusConf.text}`}
+          >
+            {statusConf.label}
+          </span>
+        </div>
+      </div>
+      <div className="w-28 h-20 shrink-0 rounded-lg overflow-hidden bg-gray-200 shadow-sm">
+        <img
+          src={displayImage}
+          alt={item.name}
+          className="w-full h-full object-cover"
+          onError={() => setImgError(true)}
+        />
       </div>
     </div>
   );

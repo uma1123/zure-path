@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getDatesWithRoutes } from "../../../../utils/mockRouteHistory";
 
@@ -22,10 +22,30 @@ export default function HistoryPage() {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
+  const [datesWithRoutes, setDatesWithRoutes] = useState<Set<string>>(new Set());
 
-  // 経路が存在する日付セット
-  const datesWithRoutes = useMemo(() => {
-    return new Set(getDatesWithRoutes());
+  // 経路が存在する日付を API から取得（失敗時は localStorage + モック）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/route-history");
+        const data = await res.json();
+        if (!cancelled && res.ok && data.status === "success" && Array.isArray(data.routes)) {
+          const dates = [...new Set((data.routes as { date: string }[]).map((r) => r.date))];
+          setDatesWithRoutes(new Set(dates));
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      if (!cancelled) {
+        setDatesWithRoutes(new Set(getDatesWithRoutes()));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // カレンダーデータ生成

@@ -146,3 +146,89 @@ export async function POST(request: Request) {
     );
   }
 }
+
+/** DB 行を RouteRecord 形に変換 */
+function rowToRouteRecord(row: Record<string, unknown>) {
+  return {
+    id: String(row.id ?? ""),
+    date: String(row.date ?? ""),
+    startTime: String(row.start_time ?? ""),
+    startName: String(row.start_name ?? ""),
+    endName: String(row.end_name ?? ""),
+    startLat: Number(row.start_lat ?? 0),
+    startLng: Number(row.start_lng ?? 0),
+    endLat: Number(row.end_lat ?? 0),
+    endLng: Number(row.end_lng ?? 0),
+    distanceKm: Number(row.distance_km ?? 0),
+    durationMin: Number(row.duration_min ?? 0),
+    pathPoints: Array.isArray(row.path_points) ? row.path_points : [],
+    places: Array.isArray(row.places) ? row.places : [],
+  };
+}
+
+/** 経路履歴一覧取得（認証必須、任意で date クエリ） */
+export async function GET(request: Request) {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: "認証が必要です",
+        },
+        { status: 401 },
+      );
+    }
+
+    const url = new URL(request.url);
+    const dateParam = url.searchParams.get("date")?.trim();
+
+    let query = supabase
+      .from("route_history")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("date", { ascending: false })
+      .order("start_time", { ascending: false });
+
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      query = query.eq("date", dateParam);
+    }
+
+    const { data: rows, error } = await query;
+
+    if (error) {
+      console.error("[/api/route-history] GET select error", error);
+      return NextResponse.json(
+        {
+          status: "error",
+          message: "経路履歴の取得に失敗しました",
+          detail: error.message,
+        },
+        { status: 500 },
+      );
+    }
+
+    const routes = (rows ?? []).map((row) => rowToRouteRecord(row as Record<string, unknown>));
+
+    return NextResponse.json({
+      status: "success",
+      routes,
+    });
+  } catch (error: unknown) {
+    console.error("[/api/route-history] GET unexpected error", error);
+    return NextResponse.json(
+      {
+        status: "error",
+        message: "予期せぬエラーが発生しました",
+        detail: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 },
+    );
+  }
+}
