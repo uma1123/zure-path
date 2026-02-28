@@ -572,6 +572,7 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map) return;
 
+    let markers: maplibregl.Marker[] = [];
     const addDiscoverMarkers = () => {
       const markers: maplibregl.Marker[] = [];
       const discovered = getDiscovered();
@@ -594,12 +595,43 @@ export default function MapView() {
           .setLngLat([record.lng, record.lat])
           .addTo(map);
 
-        markers.push(marker);
-      });
+    const addDiscoverMarkers = () => {
+      void getDiscovered().then((discovered) => {
+        // 既存マーカーをクリア
+        markers.forEach((m) => m.remove());
+        markers = [];
 
-      return markers;
+        discovered.forEach((record) => {
+          if (record.lat == null || record.lng == null) return;
+
+          const iconPath = getDiscoverPinIconPath(record.category);
+
+          const el = document.createElement("div");
+          el.style.width = "60px";
+          el.style.height = "60px";
+          el.style.backgroundImage = `url("${iconPath}")`;
+          el.style.backgroundSize = "contain";
+          el.style.backgroundRepeat = "no-repeat";
+          el.style.backgroundPosition = "center";
+          el.style.cursor = "pointer";
+          el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.25))";
+
+          const marker = new maplibregl.Marker({
+            element: el,
+            anchor: "bottom",
+          })
+            .setLngLat([record.lng, record.lat])
+            .addTo(map);
+
+          markers.push(marker);
+        });
+      });
     };
 
+    if (map.loaded()) {
+      addDiscoverMarkers();
+    } else {
+      map.on("load", addDiscoverMarkers);
     let markers: maplibregl.Marker[] = [];
 
     if (map.isStyleLoaded()) {
@@ -619,7 +651,7 @@ export default function MapView() {
     return () => {
       markers.forEach((m) => m.remove());
     };
-  }, [markerVersion]);
+  }, [markerVersion, userLocation]);
 
   // デバイスの向きに応じてマップを回転（現在地アイコンは固定）
   useEffect(() => {
